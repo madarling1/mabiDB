@@ -23,3 +23,4 @@ def resource_dir() -> Path:
 APP_DIR = app_dir()
 RESOURCE_DIR = resource_dir()
 DATA_DIR = APP_DIR / "data"
+CONFIG_DIR = APP_DIR / "config"

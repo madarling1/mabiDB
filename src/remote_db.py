@@ -8,10 +8,10 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from app_paths import APP_DIR, DATA_DIR
+from app_paths import APP_DIR, CONFIG_DIR, DATA_DIR, RESOURCE_DIR
 
 
-CONFIG_PATH = APP_DIR / "remote_db.json"
+CONFIG_PATH = CONFIG_DIR / "remote_db.json"
 VERSION_PATH = DATA_DIR / "db_version.txt"
 REQUEST_HEADERS = {"User-Agent": "MobiDB"}
 REQUIRED_TABLES = {"entries", "rune_details", "search_synonyms"}
@@ -32,8 +32,21 @@ class RemoteDbUpdateResult:
 
 def load_remote_db_config() -> RemoteDbConfig:
     values: dict[str, object] = {}
-    if CONFIG_PATH.exists():
-        values = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    config_path = next(
+        (
+            path
+            for path in (
+                CONFIG_PATH,
+                APP_DIR / "remote_db.json",
+                RESOURCE_DIR / "remote_db.json",
+                RESOURCE_DIR / "remote_db.example.json",
+            )
+            if path.exists()
+        ),
+        None,
+    )
+    if config_path:
+        values = json.loads(config_path.read_text(encoding="utf-8"))
 
     database_url = str(os.environ.get("MOBIDB_SQLITE_URL") or values.get("database_url") or "")
     version_url = str(os.environ.get("MOBIDB_VERSION_URL") or values.get("version_url") or "")

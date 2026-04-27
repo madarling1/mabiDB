@@ -1,5 +1,0 @@
-{
-  "database_url": "https://raw.githubusercontent.com/USER/REPO/main/data/mobidb.sqlite",
-  "version_url": "https://raw.githubusercontent.com/USER/REPO/main/data/db_version.txt",
-  "timeout_seconds": 15
-}

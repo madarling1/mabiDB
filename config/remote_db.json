@@ -1,0 +1,5 @@
+{
+  "database_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/mobidb.sqlite",
+  "version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/db_version.txt",
+  "timeout_seconds": 15
+}

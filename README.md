@@ -6,8 +6,9 @@ Mabinogi 룬 정보를 SQLite DB로 저장하고 터미널 UI에서 검색하는
 
 ```text
 db.xlsx               원본 엑셀 데이터
-schema.sql            SQLite 테이블 구조
+resources/schema.sql  SQLite 테이블 구조
 data/mobidb.sqlite    생성된 DB 파일
+config/remote_db.json GitHub DB 업데이트 설정
 
 src/db.py             DB 연결/초기화 공통 코드
 src/import_excel.py   db.xlsx -> SQLite import
@@ -32,7 +33,7 @@ python .\src\tui.py
 
 사용 방법:
 
-1. `remote_db.example.json`을 `remote_db.json`으로 복사
+1. `config/remote_db.example.json`을 `config/remote_db.json`으로 복사
 2. `database_url`, `version_url`을 본인 GitHub raw URL로 변경
 3. GitHub에 `data/mobidb.sqlite`를 다시 올릴 때마다 `data/db_version.txt` 값도 함께 변경
 
@@ -46,7 +47,7 @@ python .\src\tui.py
 }
 ```
 
-`remote_db.json`이 없거나 `database_url`이 비어 있으면 기존처럼 로컬 `data/mobidb.sqlite`만 사용합니다.
+`config/remote_db.json`이 없거나 `database_url`이 비어 있으면 기존처럼 로컬 `data/mobidb.sqlite`만 사용합니다.
 
 ## exe 빌드
 
@@ -64,12 +65,12 @@ dist/MobiDB.zip
 dist/MobiDB/
   MobiDB.exe
   _internal/
-  remote_db.example.json
-  schema.sql
+  USER_GUIDE.txt
+  config/remote_db.json
   data/mobidb.sqlite
 ```
 
-배포할 때는 `dist/MobiDB.zip`을 GitHub Release에 올리면 됩니다. 사용자 쪽에서는 압축을 풀고 `remote_db.example.json`을 `remote_db.json`으로 이름 바꾼 뒤 GitHub raw URL을 입력하면 됩니다.
+배포할 때는 `dist/MobiDB.zip`을 GitHub Release에 올리면 됩니다. `remote_db.json`이 있으면 빌드 결과의 `config/` 폴더에 함께 포함됩니다. 없으면 사용자 쪽에서 압축을 풀고 `config/remote_db.example.json`을 `config/remote_db.json`으로 이름 바꾼 뒤 GitHub raw URL을 입력하면 됩니다.
 
 엑셀 데이터를 DB에 다시 반영:
 

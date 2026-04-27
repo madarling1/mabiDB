@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import shutil
 from pathlib import Path
 
 from app_paths import APP_DIR, DATA_DIR, RESOURCE_DIR
@@ -9,8 +10,13 @@ from remote_db import update_database_from_remote
 
 ROOT_DIR = APP_DIR
 DB_PATH = DATA_DIR / "mobidb.sqlite"
-SCHEMA_PATH = APP_DIR / "schema.sql"
-BUNDLED_SCHEMA_PATH = RESOURCE_DIR / "schema.sql"
+SCHEMA_CANDIDATES = (
+    APP_DIR / "resources" / "schema.sql",
+    APP_DIR / "schema.sql",
+    RESOURCE_DIR / "resources" / "schema.sql",
+    RESOURCE_DIR / "schema.sql",
+)
+BUNDLED_DB_PATH = RESOURCE_DIR / "data" / "mobidb.sqlite"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -22,9 +28,11 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
 
 def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path == DB_PATH and not db_path.exists() and BUNDLED_DB_PATH.exists():
+        shutil.copy2(BUNDLED_DB_PATH, db_path)
     if update_remote and db_path == DB_PATH:
         update_database_from_remote(db_path)
-    schema_path = SCHEMA_PATH if SCHEMA_PATH.exists() else BUNDLED_SCHEMA_PATH
+    schema_path = next(path for path in SCHEMA_CANDIDATES if path.exists())
     schema = schema_path.read_text(encoding="utf-8")
     with connect(db_path) as conn:
         conn.executescript(schema)
