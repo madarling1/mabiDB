@@ -1,93 +1,60 @@
 # MobiDB
 
-Mabinogi 룬 정보를 SQLite DB로 저장하고 터미널 UI에서 검색하는 도구입니다.
+Mabinogi 룬 정보를 검색하는 터미널 프로그램입니다.
 
-## 주요 파일
+## 다운로드
 
-```text
-db.xlsx               원본 엑셀 데이터
-resources/schema.sql  SQLite 테이블 구조
-data/mobidb.sqlite    생성된 DB 파일
-config/remote_db.json GitHub DB 업데이트 설정
+프로그램은 GitHub **Release**에서 받으면 됩니다.
 
-src/db.py             DB 연결/초기화 공통 코드
-src/import_excel.py   db.xlsx -> SQLite import
-src/search.py         검색 로직
-src/tui.py            터미널 검색 UI 실행 파일
-src/synonyms.py       검색 동의어 편집기
-```
+1. 이 저장소 오른쪽의 **Releases**를 엽니다.
+2. 최신 버전의 `MobiDB.zip`을 다운로드합니다.
+3. 원하는 폴더에 압축을 풉니다.
+4. 압축을 푼 폴더 안의 `MobiDB.exe`를 실행합니다.
 
-## 실행
+`MobiDB.exe`만 따로 꺼내서 실행하지 말고, 압축을 푼 폴더 구조를 그대로 둔 상태에서 실행하세요.
 
-검색기 실행:
+## 사용 방법
 
-```powershell
-python .\src\tui.py
-```
-
-위 명령은 새 PowerShell 창을 열고 검색 UI를 실행합니다.
-
-## GitHub DB 자동 업데이트
-
-`RemoteDB` 버전은 검색기 실행 시 GitHub의 SQLite 파일을 확인하고, 새 버전이면 `data/mobidb.sqlite`를 내려받아 교체합니다.
-
-사용 방법:
-
-1. `config/remote_db.example.json`을 `config/remote_db.json`으로 복사
-2. `database_url`, `version_url`을 본인 GitHub raw URL로 변경
-3. GitHub에 `data/mobidb.sqlite`를 다시 올릴 때마다 `data/db_version.txt` 값도 함께 변경
-
-예:
-
-```json
-{
-  "database_url": "https://raw.githubusercontent.com/USER/REPO/main/data/mobidb.sqlite",
-  "version_url": "https://raw.githubusercontent.com/USER/REPO/main/data/db_version.txt",
-  "timeout_seconds": 15
-}
-```
-
-`config/remote_db.json`이 없거나 `database_url`이 비어 있으면 기존처럼 로컬 `data/mobidb.sqlite`만 사용합니다.
-
-## exe 빌드
-
-PyInstaller가 설치된 환경에서:
-
-```powershell
-.\build.ps1
-```
-
-완성된 배포 폴더:
+실행하면 검색 범위를 먼저 선택합니다.
 
 ```text
-dist/MobiDB.zip
+1. 무기 / 방어구 / 엠블럼 룬
+2. 장신구 룬
+```
 
-dist/MobiDB/
+검색어를 입력하면 관련 룬 목록이 표시됩니다.
+
+```text
+Enter: 검색
+1: 뒤로가기
+2: 종료
+```
+
+## DB 업데이트
+
+프로그램을 실행하면 자동으로 최신 DB가 있는지 확인합니다.
+
+새 DB가 있으면 GitHub에서 내려받아 로컬 `data/mobidb.sqlite`를 교체합니다. 사용자가 직접 DB 파일을 수정하거나 업데이트할 필요는 없습니다.
+
+인터넷 연결이 없거나 업데이트 확인에 실패해도, 기존에 들어있는 로컬 DB로 검색할 수 있습니다.
+
+## 폴더 구조
+
+압축을 풀면 대략 아래와 같은 구조입니다.
+
+```text
+MobiDB/
   MobiDB.exe
-  _internal/
   USER_GUIDE.txt
-  config/remote_db.json
-  data/mobidb.sqlite
+  config/
+  data/
+  _internal/
 ```
 
-배포할 때는 `dist/MobiDB.zip`을 GitHub Release에 올리면 됩니다. `remote_db.json`이 있으면 빌드 결과의 `config/` 폴더에 함께 포함됩니다. 없으면 사용자 쪽에서 압축을 풀고 `config/remote_db.example.json`을 `config/remote_db.json`으로 이름 바꾼 뒤 GitHub raw URL을 입력하면 됩니다.
+- `MobiDB.exe`: 실행 파일
+- `USER_GUIDE.txt`: 간단한 사용 설명
+- `config/`: 자동 업데이트 설정
+- `data/`: 검색에 사용하는 로컬 DB
+- `_internal/`: 실행에 필요한 파일
 
-엑셀 데이터를 DB에 다시 반영:
-
-```powershell
-python .\src\import_excel.py --file .\db.xlsx
-```
-
-동의어 편집:
-
-```powershell
-python .\src\synonyms.py
-```
-
-예:
-
-```text
-/추가 크리,치뎀,치확 치명타
-/삭제 크리 치명타
-/목록
-```
+`_internal`, `config`, `data` 폴더를 삭제하면 프로그램이 정상 동작하지 않을 수 있습니다.
