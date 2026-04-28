@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import sys
 import unicodedata
 from pathlib import Path
 
-from paths import APP_DIR, is_frozen
 from database import DB_PATH, connect, initialize
 from search import get_attributes, search_entries
 
@@ -330,29 +328,6 @@ def search_loop(scope: str, scope_label: str) -> None:
                 keyword = next_input
 
 
-def launch_new_console() -> None:
-    if is_frozen():
-        target_command = f"& '{sys.executable}' --run"
-    else:
-        target_command = f"& '{sys.executable}' '{Path(__file__).resolve()}' --run"
-
-    run_command = (
-        "$Host.UI.RawUI.WindowTitle = 'mabiDB Rune Search'; "
-        "$Host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size(90, 3000); "
-        "$Host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(90, 36); "
-        + target_command
-    )
-    command = [
-        "powershell.exe",
-        "-NoExit",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        run_command,
-    ]
-    subprocess.Popen(command, cwd=APP_DIR, creationflags=subprocess.CREATE_NEW_CONSOLE)
-
-
 def run_tui() -> None:
     configure_console()
     scope, scope_label = choose_scope()
@@ -362,10 +337,7 @@ def run_tui() -> None:
 
 
 def main() -> None:
-    if "--run" in sys.argv:
-        run_tui()
-        return
-    launch_new_console()
+    run_tui()
 
 
 if __name__ == "__main__":
