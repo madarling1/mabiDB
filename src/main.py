@@ -156,9 +156,13 @@ def print_header(title: str, scope_label: str | None = None) -> None:
     print()
 
 
-def choose_scope() -> tuple[str, str]:
+def choose_scope(update_result=None) -> tuple[str, str]:
+    update_message_pending = update_result is not None
     while True:
         print_header("mabiDB Rune Search")
+        if update_message_pending:
+            print_update_result(update_result)
+            update_message_pending = False
         print("검색할 룬 그룹을 선택하세요.")
         print()
         print("  1. 무기 / 방어구 / 엠블럼 룬")
@@ -293,14 +297,9 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
 
 
 def search_loop(scope: str, scope_label: str) -> None:
-    update_result = initialize(update_remote=True)
     with connect() as conn:
-        update_message_pending = True
         while True:
             print_header("mabiDB Rune Search", scope_label)
-            if update_message_pending:
-                print_update_result(update_result)
-                update_message_pending = False
             print(f"{search_help_text(scope)}\n")
             print("Enter:검색  1:뒤로가기  2:종료\n")
             print()
@@ -330,7 +329,8 @@ def search_loop(scope: str, scope_label: str) -> None:
 
 def run_tui() -> None:
     configure_console()
-    scope, scope_label = choose_scope()
+    update_result = initialize(update_remote=True)
+    scope, scope_label = choose_scope(update_result)
     search_loop(scope, scope_label)
     print()
     print(f"DB: {DB_PATH}")
