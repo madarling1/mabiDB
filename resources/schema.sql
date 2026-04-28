@@ -71,7 +71,3 @@ CREATE INDEX IF NOT EXISTS idx_rune_details_rune_kind ON rune_details(rune_kind)
 CREATE INDEX IF NOT EXISTS idx_rune_details_class_name ON rune_details(class_name);
 CREATE INDEX IF NOT EXISTS idx_rune_details_tier ON rune_details(tier);
 CREATE INDEX IF NOT EXISTS idx_search_synonyms_keyword ON search_synonyms(keyword);
-
-INSERT OR IGNORE INTO search_synonyms(keyword, expansion) VALUES
-    ('브레이크', '무방비'),
-    ('무방비', '브레이크');

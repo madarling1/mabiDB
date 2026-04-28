@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 
-from db import DB_PATH, connect, initialize
+from database import DB_PATH, connect, initialize
 
 
 EQUIPMENT_RUNE_TYPES = ("WeaponRune", "ArmorRune", "EmblemRune")
@@ -323,9 +323,19 @@ def print_search_results(
         print()
 
 
+def print_update_result(update_result) -> None:
+    if update_result is None:
+        return
+    if update_result.status == "updated":
+        print(f"DB 업데이트 완료: {update_result.message}")
+    elif update_result.status == "failed":
+        print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
+
+
 def run_interactive(limit: int = 10) -> None:
-    initialize(update_remote=True)
+    update_result = initialize(update_remote=True)
     with connect() as conn:
+        print_update_result(update_result)
         print("검색어를 입력하세요. 종료하려면 빈 줄, q, quit, exit 중 하나를 입력하세요.")
         while True:
             keyword = input("> ").strip()
@@ -336,7 +346,7 @@ def run_interactive(limit: int = 10) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Search MobiDB entries.")
+    parser = argparse.ArgumentParser(description="Search mabiDB entries.")
     parser.add_argument("keyword", nargs="?", help="Keyword to search")
     parser.add_argument("--limit", type=int, default=10, help="Maximum result count")
     parser.add_argument(
@@ -350,7 +360,8 @@ def main() -> None:
         run_interactive(args.limit)
         return
 
-    initialize(update_remote=True)
+    update_result = initialize(update_remote=True)
+    print_update_result(update_result)
     with connect() as conn:
         print_search_results(conn, args.keyword, args.limit, args.scope)
     print(f"DB: {DB_PATH}")

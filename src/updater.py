@@ -8,12 +8,12 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from app_paths import APP_DIR, CONFIG_DIR, DATA_DIR, RESOURCE_DIR
+from paths import APP_DIR, CONFIG_DIR, DATA_DIR, RESOURCE_DIR
 
 
 CONFIG_PATH = CONFIG_DIR / "remote_db.json"
 VERSION_PATH = DATA_DIR / "db_version.txt"
-REQUEST_HEADERS = {"User-Agent": "MobiDB"}
+REQUEST_HEADERS = {"User-Agent": "mabiDB"}
 REQUIRED_TABLES = {"entries", "rune_details", "search_synonyms"}
 
 
@@ -38,6 +38,8 @@ def load_remote_db_config() -> RemoteDbConfig:
             for path in (
                 CONFIG_PATH,
                 APP_DIR / "remote_db.json",
+                APP_DIR / "config" / "remote_db.json",
+                RESOURCE_DIR / "config" / "remote_db.json",
                 RESOURCE_DIR / "remote_db.json",
                 RESOURCE_DIR / "remote_db.example.json",
             )

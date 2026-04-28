@@ -7,8 +7,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from app_paths import APP_DIR, is_frozen
-from db import DB_PATH, connect, initialize
+from paths import APP_DIR, is_frozen
+from database import DB_PATH, connect, initialize
 from search import get_attributes, search_entries
 
 
@@ -160,7 +160,7 @@ def print_header(title: str, scope_label: str | None = None) -> None:
 
 def choose_scope() -> tuple[str, str]:
     while True:
-        print_header("MobiDB Rune Search")
+        print_header("mabiDB Rune Search")
         print("검색할 룬 그룹을 선택하세요.")
         print()
         print("  1. 무기 / 방어구 / 엠블럼 룬")
@@ -262,10 +262,21 @@ def print_result_box(row, attributes: dict[str, str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
+def print_update_result(update_result) -> None:
+    if update_result is None:
+        return
+    if update_result.status == "updated":
+        print(f"DB 업데이트 완료: {update_result.message}")
+        print()
+    elif update_result.status == "failed":
+        print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
+        print()
+
+
 def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
     rows = search_entries(conn, keyword, 20, scope)
 
-    print_header("MobiDB Rune Search", scope_label)
+    print_header("mabiDB Rune Search", scope_label)
     print(f"검색어: {keyword}")
     print(f"결과: {len(rows)}건")
     print()
@@ -284,10 +295,14 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
 
 
 def search_loop(scope: str, scope_label: str) -> None:
-    initialize(update_remote=True)
+    update_result = initialize(update_remote=True)
     with connect() as conn:
+        update_message_pending = True
         while True:
-            print_header("MobiDB Rune Search", scope_label)
+            print_header("mabiDB Rune Search", scope_label)
+            if update_message_pending:
+                print_update_result(update_result)
+                update_message_pending = False
             print(f"{search_help_text(scope)}\n")
             print("Enter:검색  1:뒤로가기  2:종료\n")
             print()
@@ -322,7 +337,7 @@ def launch_new_console() -> None:
         target_command = f"& '{sys.executable}' '{Path(__file__).resolve()}' --run"
 
     run_command = (
-        "$Host.UI.RawUI.WindowTitle = 'MobiDB Rune Search'; "
+        "$Host.UI.RawUI.WindowTitle = 'mabiDB Rune Search'; "
         "$Host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size(90, 3000); "
         "$Host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(90, 36); "
         + target_command
