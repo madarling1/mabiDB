@@ -56,6 +56,7 @@ example
 
 잘못된 정보 / 변경점 요청은 [여기](https://github.com/madarling1/mabiDB/issues/new)에 적어주세요!
 
+
 ## 저장소 구조
 
 ```text
