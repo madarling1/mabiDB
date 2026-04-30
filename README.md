@@ -35,12 +35,11 @@ dkemr > 아득
 ```
 과 같이 검색 할 수 있어요
 
-## DB 업데이트
+## 업데이트
 
-프로그램을 실행하면 자동으로 최신 DB가 있는지 확인합니다.
+프로그램을 실행하면 자동으로 최신 앱버전과 DB가 있는지 확인합니다.
+새 업데이트가 있으면 깃허브에서 내려받아 자동으로 업데이트합니다.
 
-새 DB가 있으면 깃허브에서 내려받아 `%LOCALAPPDATA%\mabiDB\data\mobidb.sqlite`를 업데이트합니다.
-사용자가 직접 DB 파일을 수정하거나 업데이트할 필요는 없습니다.
 
 DB는 신규 패치가 있을 경우 제작자가 주기적으로 업데이트합니다.
 
@@ -57,14 +56,16 @@ mabiDB/
   config/           # 원격 DB와 버전 파일 URL을 설정합니다.
     remote_db.json
   data/
-    db_version.txt  # 기본 DB 버전이며, 사용자 앱의 업데이트 판단 기준입니다.
-    mobidb.sqlite   # exe에 포함되는 기본 룬 DB입니다.
+    app_version.txt # 앱 업데이트 판단 기준입니다.
+    db_version.txt  # DB 업데이트 판단 기준입니다.
+    mobidb.sqlite   # exe에 포함되는 기본 DB입니다.
   resources/
     schema.sql      # DB 테이블 구조를 정의합니다.
   src/
     main.py         # 터미널 UI를 실행하고 검색 흐름을 제어합니다.
     paths.py        # exe 실행 여부에 따라 앱/리소스/사용자 데이터 경로를 정합니다.
     database.py     # SQLite 연결, 기본 DB 복사, 스키마 초기화를 담당합니다.
-    updater.py      # DB 버전 확인과 다운로드 업데이트를 처리합니다.
+    app_updater.py  # 앱 버전 확인, 다운로드, 교체 업데이트를 처리합니다.
+    db_updater.py   # DB 버전 확인과 다운로드 업데이트를 처리합니다.
     search.py       # 검색 로직을 처리합니다.
 ```
