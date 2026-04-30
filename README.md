@@ -6,7 +6,7 @@
 
 프로그램은 GitHub **Release**에서 받으면 됩니다.
 
-1. 이 저장소 오른쪽의 **[Releases](../../releases)**를 엽니다.
+1. 이 저장소 오른쪽의 [Releases](../../releases)를 엽니다.
 2. 최신 버전의 `mabiDB.exe`를 다운로드합니다.
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 
