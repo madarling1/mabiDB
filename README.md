@@ -11,7 +11,7 @@
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 
 실행 후 DB 파일은 `%LOCALAPPDATA%\mabiDB` 경로에 저장됩니다.
-현재 적용된 DB 버전은 %LOCALAPPDATA%\mabiDB\data\db_version.txt 에 표시됩니다.
+현재 적용된 DB 버전은 `%LOCALAPPDATA%\mabiDB\data\db_version.txt` 에 표시됩니다.
 
 ## 사용 방법
 
