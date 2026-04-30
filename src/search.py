@@ -8,10 +8,132 @@ from database import DB_PATH, connect, initialize
 
 EQUIPMENT_RUNE_TYPES = ("WeaponRune", "ArmorRune", "EmblemRune")
 ACCESSORY_RUNE_TYPE = "AccessoryRune"
+CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+JUNGSEONG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+JONGSEONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
+ENGLISH_TO_JAMO = {
+    "r": "ㄱ", "R": "ㄲ", "s": "ㄴ", "e": "ㄷ", "E": "ㄸ", "f": "ㄹ",
+    "a": "ㅁ", "q": "ㅂ", "Q": "ㅃ", "t": "ㅅ", "T": "ㅆ", "d": "ㅇ",
+    "w": "ㅈ", "W": "ㅉ", "c": "ㅊ", "z": "ㅋ", "x": "ㅌ", "v": "ㅍ", "g": "ㅎ",
+    "k": "ㅏ", "o": "ㅐ", "i": "ㅑ", "O": "ㅒ", "j": "ㅓ", "p": "ㅔ",
+    "u": "ㅕ", "P": "ㅖ", "h": "ㅗ", "y": "ㅛ", "n": "ㅜ", "b": "ㅠ",
+    "m": "ㅡ", "l": "ㅣ",
+}
+COMPOUND_VOWELS = {
+    ("ㅗ", "ㅏ"): "ㅘ",
+    ("ㅗ", "ㅐ"): "ㅙ",
+    ("ㅗ", "ㅣ"): "ㅚ",
+    ("ㅜ", "ㅓ"): "ㅝ",
+    ("ㅜ", "ㅔ"): "ㅞ",
+    ("ㅜ", "ㅣ"): "ㅟ",
+    ("ㅡ", "ㅣ"): "ㅢ",
+}
+COMPOUND_FINALS = {
+    ("ㄱ", "ㅅ"): "ㄳ",
+    ("ㄴ", "ㅈ"): "ㄵ",
+    ("ㄴ", "ㅎ"): "ㄶ",
+    ("ㄹ", "ㄱ"): "ㄺ",
+    ("ㄹ", "ㅁ"): "ㄻ",
+    ("ㄹ", "ㅂ"): "ㄼ",
+    ("ㄹ", "ㅅ"): "ㄽ",
+    ("ㄹ", "ㅌ"): "ㄾ",
+    ("ㄹ", "ㅍ"): "ㄿ",
+    ("ㄹ", "ㅎ"): "ㅀ",
+    ("ㅂ", "ㅅ"): "ㅄ",
+}
+LEADING_TO_FINAL = {
+    "ㄱ": "ㄱ", "ㄲ": "ㄲ", "ㄴ": "ㄴ", "ㄷ": "ㄷ", "ㄹ": "ㄹ", "ㅁ": "ㅁ",
+    "ㅂ": "ㅂ", "ㅅ": "ㅅ", "ㅆ": "ㅆ", "ㅇ": "ㅇ", "ㅈ": "ㅈ", "ㅊ": "ㅊ",
+    "ㅋ": "ㅋ", "ㅌ": "ㅌ", "ㅍ": "ㅍ", "ㅎ": "ㅎ",
+}
+FINAL_TO_LEADING = {value: key for key, value in LEADING_TO_FINAL.items()}
+CHOSEONG_SET = set(CHOSEONG)
+VOWEL_SET = set(JUNGSEONG)
+CONSONANT_SET = set(LEADING_TO_FINAL)
+
+
+def compose_hangul_syllable(initial: str, vowel: str, final: str = "") -> str:
+    return chr(
+        0xAC00
+        + (CHOSEONG.index(initial) * 21 + JUNGSEONG.index(vowel)) * 28
+        + JONGSEONG.index(final)
+    )
+
+
+def english_to_korean(text: str) -> str:
+    jamo = [ENGLISH_TO_JAMO.get(char, char) for char in text]
+    result = []
+    index = 0
+    while index < len(jamo):
+        current = jamo[index]
+        if current not in CONSONANT_SET or index + 1 >= len(jamo) or jamo[index + 1] not in VOWEL_SET:
+            result.append(current)
+            index += 1
+            continue
+
+        initial = current
+        vowel = jamo[index + 1]
+        index += 2
+        if index < len(jamo) and (vowel, jamo[index]) in COMPOUND_VOWELS:
+            vowel = COMPOUND_VOWELS[(vowel, jamo[index])]
+            index += 1
+
+        final = ""
+        if index < len(jamo) and jamo[index] in CONSONANT_SET:
+            first_final = LEADING_TO_FINAL[jamo[index]]
+            if index + 1 < len(jamo) and jamo[index + 1] in VOWEL_SET:
+                final = ""
+            elif (
+                index + 1 < len(jamo)
+                and jamo[index + 1] in CONSONANT_SET
+                and (first_final, LEADING_TO_FINAL[jamo[index + 1]]) in COMPOUND_FINALS
+                and not (index + 2 < len(jamo) and jamo[index + 2] in VOWEL_SET)
+            ):
+                final = COMPOUND_FINALS[(first_final, LEADING_TO_FINAL[jamo[index + 1]])]
+                index += 2
+            else:
+                final = first_final
+                index += 1
+
+        result.append(compose_hangul_syllable(initial, vowel, final))
+
+    return "".join(result)
+
+
+def hangul_initials(text: str) -> str:
+    result = []
+    for char in text:
+        code = ord(char)
+        if 0xAC00 <= code <= 0xD7A3:
+            result.append(CHOSEONG[(code - 0xAC00) // 588])
+        elif char in CHOSEONG_SET:
+            result.append(char)
+    return "".join(result)
+
+
+def is_initial_search(text: str) -> bool:
+    compact = "".join(text.split())
+    return bool(compact) and all(char in CHOSEONG_SET for char in compact)
+
+
+def initial_search_matches(text: str, keyword: str) -> bool:
+    initial_keyword = "".join(keyword.split())
+    if not initial_keyword:
+        return False
+
+    if hangul_initials(text).startswith(initial_keyword):
+        return True
+
+    return any(hangul_initials(word).startswith(initial_keyword) for word in text.split())
+
+
+def search_variants(keyword: str) -> list[str]:
+    converted = english_to_korean(keyword.strip())
+    return [converted or keyword.strip()]
 
 
 def expand_search_terms(conn: sqlite3.Connection, keyword: str) -> list[str]:
-    base_keyword = keyword.strip()
+    base_keyword = normalize_search_keyword(keyword)
     if not base_keyword:
         return []
 
@@ -24,8 +146,12 @@ def expand_search_terms(conn: sqlite3.Connection, keyword: str) -> list[str]:
         """,
         (base_keyword,),
     ).fetchall()
-    terms = [base_keyword, *[row["expansion"] for row in rows]]
+    terms = [*search_variants(base_keyword), *[row["expansion"] for row in rows]]
     return list(dict.fromkeys(term for term in terms if term))
+
+
+def normalize_search_keyword(keyword: str) -> str:
+    return english_to_korean(keyword.strip())
 
 
 def find_accessory_classes(conn: sqlite3.Connection, terms: list[str]) -> list[str]:
@@ -242,6 +368,177 @@ def search_entries_for_term(
     ).fetchall()
 
 
+def search_gathering_entries_by_name(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 10,
+) -> list[sqlite3.Row]:
+    keyword = keyword.strip()
+    if not keyword:
+        return []
+
+    variants = search_variants(keyword)
+    if is_initial_search(keyword):
+        rows = conn.execute(
+            """
+            SELECT
+                e.id,
+                e.type,
+                e.name,
+                e.summary,
+                e.description,
+                80 AS score,
+                COALESCE(rd.class_name, '') AS class_name,
+                rd.skill_slot AS skill_slot,
+                COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+            FROM entries e
+            LEFT JOIN rune_details rd ON rd.entry_id = e.id
+            LEFT JOIN entry_tags et ON et.entry_id = e.id
+            LEFT JOIN tags t ON t.id = et.tag_id
+            WHERE e.source = 'db.xlsx#Gathering'
+            GROUP BY
+                e.id,
+                e.type,
+                e.name,
+                e.summary,
+                e.description,
+                rd.class_name,
+                rd.skill_slot
+            ORDER BY e.id ASC
+            """
+        ).fetchall()
+        return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
+
+    clauses = []
+    params: list[str | int] = []
+    for variant in variants:
+        term = f"%{variant}%"
+        compact_variant = "".join(variant.split())
+        compact_term = f"%{compact_variant}%"
+        clauses.extend(
+            [
+                """
+                SELECT e.id, 100 AS score
+                FROM entries e
+                WHERE e.source = 'db.xlsx#Gathering'
+                  AND e.name = ?
+                """,
+                """
+                SELECT e.id, 80 AS score
+                FROM entries e
+                WHERE e.source = 'db.xlsx#Gathering'
+                  AND e.name LIKE ?
+                """,
+                """
+                SELECT e.id, 75 AS score
+                FROM entries e
+                WHERE e.source = 'db.xlsx#Gathering'
+                  AND REPLACE(e.name, ' ', '') LIKE ?
+                """,
+                """
+                SELECT a.entry_id AS id, 70 AS score
+                FROM aliases a
+                JOIN entries e ON e.id = a.entry_id
+                WHERE e.source = 'db.xlsx#Gathering'
+                  AND a.alias LIKE ?
+                """,
+                """
+                SELECT a.entry_id AS id, 65 AS score
+                FROM aliases a
+                JOIN entries e ON e.id = a.entry_id
+                WHERE e.source = 'db.xlsx#Gathering'
+                  AND REPLACE(a.alias, ' ', '') LIKE ?
+                """,
+            ]
+        )
+        params.extend([variant, term, compact_term, term, compact_term])
+
+    matched_sql = "\nUNION ALL\n".join(clauses)
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            {matched_sql}
+        ),
+        ranked AS (
+            SELECT id, MAX(score) AS score
+            FROM matched
+            GROUP BY id
+            ORDER BY score DESC, id ASC
+            LIMIT ?
+        )
+        SELECT
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            r.score,
+            COALESCE(rd.class_name, '') AS class_name,
+            rd.skill_slot AS skill_slot,
+            COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+        FROM ranked r
+        JOIN entries e ON e.id = r.id
+        LEFT JOIN rune_details rd ON rd.entry_id = e.id
+        LEFT JOIN entry_tags et ON et.entry_id = e.id
+        LEFT JOIN tags t ON t.id = et.tag_id
+        GROUP BY
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            r.score,
+            rd.class_name,
+            rd.skill_slot
+        ORDER BY r.score DESC, e.id ASC
+        """,
+        (*params, limit),
+    ).fetchall()
+
+
+def search_entries_by_initials(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 10,
+    rune_scope: str | None = None,
+) -> list[sqlite3.Row]:
+    scope = rune_scope or ""
+    rows = conn.execute(
+        """
+        SELECT
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            80 AS score,
+            COALESCE(rd.class_name, '') AS class_name,
+            rd.skill_slot AS skill_slot,
+            COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+        FROM entries e
+        LEFT JOIN rune_details rd ON rd.entry_id = e.id
+        LEFT JOIN entry_tags et ON et.entry_id = e.id
+        LEFT JOIN tags t ON t.id = et.tag_id
+        WHERE
+            ? = ''
+            OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
+            OR (? = 'accessory' AND e.type = 'AccessoryRune')
+            OR (? = 'gathering' AND e.source = 'db.xlsx#Gathering')
+        GROUP BY
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            rd.class_name,
+            rd.skill_slot
+        ORDER BY e.id ASC
+        """,
+        (scope, scope, scope, scope),
+    ).fetchall()
+    return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
+
+
 def sort_search_rows(rows: list[sqlite3.Row], rune_scope: str | None = None) -> list[sqlite3.Row]:
     if rune_scope != "accessory":
         return sorted(rows, key=lambda row: (-row["score"], row["name"]))
@@ -271,6 +568,12 @@ def search_entries(
     limit: int = 10,
     rune_scope: str | None = None,
 ) -> list[sqlite3.Row]:
+    if is_initial_search(keyword):
+        return search_entries_by_initials(conn, keyword, limit, rune_scope)
+
+    if rune_scope == "gathering":
+        return search_gathering_entries_by_name(conn, keyword, limit)
+
     terms = expand_search_terms(conn, keyword)
     if not terms:
         return []
@@ -351,8 +654,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10, help="Maximum result count")
     parser.add_argument(
         "--scope",
-        choices=["equipment", "accessory"],
-        help="Rune group filter: equipment or accessory",
+        choices=["equipment", "accessory", "gathering"],
+        help="Search group filter: equipment, accessory, or gathering",
     )
     args = parser.parse_args()
 
