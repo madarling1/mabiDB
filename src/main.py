@@ -7,7 +7,8 @@ import sys
 import unicodedata
 from pathlib import Path
 
-from database import DB_PATH, connect, initialize
+from app_updater import handle_app_update_args, update_app_from_remote
+from database import DB_PATH, connect, ensure_local_version_files, initialize
 from search import get_attributes, search_entries
 
 
@@ -197,14 +198,15 @@ def print_header(title: str, scope_label: str | None = None) -> None:
     print()
 
 
-def choose_scope(update_result=None) -> tuple[str, str]:
-    update_message_pending = update_result is not None
+def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
+    update_message_pending = update_result is not None or app_update_result is not None
     while True:
         print_header("mabiDB Rune Search")
         if update_message_pending:
+            print_app_update_result(app_update_result)
             print_update_result(update_result)
             update_message_pending = False
-        print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\nex)ㅇㄷㅎㅂ > 아득한빛\nex)dkemr > 아득")
+        print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
         print("  1. 무기 / 방어구 / 엠블럼 룬")
         print("  2. 장신구 룬")
@@ -561,6 +563,14 @@ def print_update_result(update_result) -> None:
         print()
 
 
+def print_app_update_result(app_update_result) -> None:
+    if app_update_result is None:
+        return
+    if app_update_result.status == "failed":
+        print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
+        print()
+
+
 def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
     rows = search_entries(conn, keyword, 20, scope)
 
@@ -621,14 +631,19 @@ def search_loop(scope: str, scope_label: str) -> None:
 
 def run_tui() -> None:
     configure_console()
+    ensure_local_version_files()
+    app_update_result = update_app_from_remote()
+    if app_update_result.status == "restarting":
+        return
     update_result = initialize(update_remote=True)
-    scope, scope_label = choose_scope(update_result)
+    scope, scope_label = choose_scope(update_result, app_update_result)
     search_loop(scope, scope_label)
     print()
     print(f"DB: {DB_PATH}")
 
 
 def main() -> None:
+    handle_app_update_args(sys.argv[1:])
     run_tui()
 
 

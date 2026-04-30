@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from paths import APP_DIR, DATA_DIR, RESOURCE_DIR
-from updater import RemoteDbUpdateResult, update_database_from_remote
+from db_updater import RemoteDbUpdateResult, update_database_from_remote
 
 
 ROOT_DIR = APP_DIR
@@ -18,7 +18,9 @@ SCHEMA_CANDIDATES = (
 )
 BUNDLED_DB_PATH = RESOURCE_DIR / "data" / "mobidb.sqlite"
 BUNDLED_VERSION_PATH = RESOURCE_DIR / "data" / "db_version.txt"
+BUNDLED_APP_VERSION_PATH = RESOURCE_DIR / "data" / "app_version.txt"
 VERSION_PATH = DATA_DIR / "db_version.txt"
+APP_VERSION_PATH = DATA_DIR / "app_version.txt"
 
 
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
@@ -28,12 +30,19 @@ def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def ensure_local_version_files(db_path: Path = DB_PATH) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path == DB_PATH and not VERSION_PATH.exists() and BUNDLED_VERSION_PATH.exists():
+        shutil.copy2(BUNDLED_VERSION_PATH, VERSION_PATH)
+    if db_path == DB_PATH and not APP_VERSION_PATH.exists() and BUNDLED_APP_VERSION_PATH.exists():
+        shutil.copy2(BUNDLED_APP_VERSION_PATH, APP_VERSION_PATH)
+
+
 def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> RemoteDbUpdateResult | None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if db_path == DB_PATH and not db_path.exists() and BUNDLED_DB_PATH.exists():
         shutil.copy2(BUNDLED_DB_PATH, db_path)
-    if db_path == DB_PATH and not VERSION_PATH.exists() and BUNDLED_VERSION_PATH.exists():
-        shutil.copy2(BUNDLED_VERSION_PATH, VERSION_PATH)
+    ensure_local_version_files(db_path)
     update_result = None
     if update_remote and db_path == DB_PATH:
         update_result = update_database_from_remote(db_path)

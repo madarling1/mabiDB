@@ -48,7 +48,7 @@ def load_remote_db_config() -> RemoteDbConfig:
         None,
     )
     if config_path:
-        values = json.loads(config_path.read_text(encoding="utf-8"))
+        values = json.loads(config_path.read_text(encoding="utf-8-sig"))
 
     database_url = str(os.environ.get("MOBIDB_SQLITE_URL") or values.get("database_url") or "")
     version_url = str(os.environ.get("MOBIDB_VERSION_URL") or values.get("version_url") or "")
