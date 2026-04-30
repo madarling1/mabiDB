@@ -61,10 +61,10 @@ mabiDB/
     mobidb.sqlite   # exe에 포함되는 기본 룬 DB입니다.
   resources/
     schema.sql      # DB 테이블 구조를 정의합니다.
-  src/              # 앱 실행, 검색, DB 초기화, 원격 업데이트 코드를 담습니다.
-    main.py
-    paths.py
-    database.py
-    updater.py
-    search.py
+  src/
+    main.py         # 터미널 UI를 실행하고 검색 흐름을 제어합니다.
+    paths.py        # exe 실행 여부에 따라 앱/리소스/사용자 데이터 경로를 정합니다.
+    database.py     # SQLite 연결, 기본 DB 복사, 스키마 초기화를 담당합니다.
+    updater.py      # DB 버전 확인과 다운로드 업데이트를 처리합니다.
+    search.py       # 검색 로직을 처리합니다.
 ```
