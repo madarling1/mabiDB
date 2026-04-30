@@ -345,6 +345,24 @@ def render_wrapped_row_fixed(
     return lines
 
 
+def render_labeled_lines_row_fixed(
+    label: str,
+    value_lines: list[str],
+    widths: list[int],
+    *,
+    height: int,
+) -> list[str]:
+    lines = value_lines or [""]
+    rendered = []
+    for index, line in enumerate(lines):
+        label_cell = center_cell(label if index == 0 else "", widths[0])
+        value_cell = left_cell(line, widths[1])
+        rendered.append("│" + label_cell + "│" + value_cell + "│")
+    while len(rendered) < height:
+        rendered.append(blank_wrapped_row(widths))
+    return rendered
+
+
 def method_display_lines(method: str) -> list[str]:
     parts = [part.strip() for part in method.split("//") if part.strip()]
     if not parts:
@@ -414,14 +432,14 @@ def render_full_width_lines_fixed(
 def gathering_card_section_heights(row, attributes: dict[str, str], width: int) -> dict[str, int]:
     widths = gathering_card_widths(width)
     content_width = width - 2
-    method_lines = method_wrapped_lines(attributes.get("방법", ""), content_width - 4)
+    method_lines = method_wrapped_lines(attributes.get("방법", ""), widths[1])
     description_lines = indented_wrapped_lines(row["description"], content_width - 4)
 
     return {
         "name": len(render_wrapped_row(["이름", row["name"]], widths, ["center", "center"])),
         "tag": len(render_wrapped_row(["분류", attributes.get("태그", "")], widths, ["center", "center"])),
         "location": len(render_wrapped_row(["채집 장소", attributes.get("위치", "")], widths, ["center", "center"])),
-        "method": len(render_full_width_lines(method_lines or [""], content_width, align="left")),
+        "method": len(render_labeled_lines_row_fixed("채집 방법", method_lines, widths, height=1)),
         "description": len(render_full_width_lines(description_lines, content_width, align="left")),
     }
 
@@ -443,7 +461,7 @@ def render_gathering_result_card(
 ) -> list[str]:
     widths = gathering_card_widths(width)
     content_width = width - 2
-    method_lines = method_wrapped_lines(attributes.get("방법", ""), content_width - 4)
+    method_lines = method_wrapped_lines(attributes.get("방법", ""), widths[1])
     description_lines = indented_wrapped_lines(row["description"], content_width - 4)
     heights = section_heights or gathering_card_section_heights(row, attributes, width)
     colored_name = f"{LIGHT_GREEN}{row['name']}{RESET}"
@@ -454,9 +472,9 @@ def render_gathering_result_card(
     lines.extend(render_wrapped_row_fixed(["분류", attributes.get("태그", "")], widths, ["center", "center"], heights["tag"]))
     lines.append(hline("├", "┼", "┤", widths))
     lines.extend(render_wrapped_row_fixed(["채집 장소", attributes.get("위치", "")], widths, ["center", "center"], heights["location"]))
+    lines.append(hline("├", "┼", "┤", widths))
+    lines.extend(render_labeled_lines_row_fixed("채집 방법", method_lines, widths, height=heights["method"]))
     lines.append(hline("├", "┴", "┤", widths))
-    lines.extend(render_full_width_lines_fixed(method_lines or [""], content_width, align="left", height=heights["method"]))
-    lines.append("├" + ("─" * content_width) + "┤")
     lines.extend(
         render_full_width_lines_fixed(
             description_lines,
