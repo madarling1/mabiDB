@@ -185,10 +185,8 @@ def update_app_from_remote() -> AppUpdateResult:
         download_path = update_dir / "mabiDB.download"
 
         download_file(config.app_download_url, download_path, config.timeout_seconds, show_progress=True)
-        print_step("앱 업데이트 파일 검증 중 . . .")
         validate_downloaded_exe(download_path)
         os.replace(download_path, new_path)
-        print_step("앱 업데이트 준비 중 . . .")
         shutil.copy2(exe_path, helper_path)
 
         subprocess.Popen(
@@ -227,7 +225,6 @@ def apply_app_update(args: list[str]) -> int:
     remote_version = args[3]
     parent_pid = int(args[4])
 
-    print_step("앱 업데이트 적용 중 . . .")
     wait_for_process_exit(parent_pid)
 
     if not replace_app_exe(target_path, new_path, old_path):
@@ -244,7 +241,6 @@ def apply_app_update(args: list[str]) -> int:
 
     try:
         print_step("업데이트 적용 완료")
-        print_step("새 버전으로 다시 실행합니다 . . .")
         subprocess.Popen([str(target_path)], cwd=str(target_path.parent), close_fds=True)
     except OSError as exc:
         print(f"앱 재실행 실패: {exc}")
@@ -255,19 +251,11 @@ def apply_app_update(args: list[str]) -> int:
 
 def replace_app_exe(target_path: Path, new_path: Path, old_path: Path) -> bool:
     last_error: OSError | None = None
-    backup_message_printed = False
-    apply_message_printed = False
     for _ in range(80):
         try:
             if target_path.exists():
-                if not backup_message_printed:
-                    print_step("기존 실행 파일 백업 중 . . .")
-                    backup_message_printed = True
                 old_path.unlink(missing_ok=True)
                 os.replace(target_path, old_path)
-            if not apply_message_printed:
-                print_step("새 실행 파일 적용 중 . . .")
-                apply_message_printed = True
             os.replace(new_path, target_path)
             return True
         except OSError as exc:
