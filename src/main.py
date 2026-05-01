@@ -219,7 +219,7 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
 
 def search_help_text(scope: str) -> str:
     if scope == "gathering":
-        return "채집물 이름으로 검색 가능합니다. 예) 양털, 마나석 등\n초성검색도 가능합니다. ex) ㄷㄲㅇㅇㅌ > 두꺼운양털"
+        return "채집물 이름으로 검색 가능합니다. 예) 양털, 마나석 등\n초성검색도 가능합니다. ex) ㄷㄲㅇㅇㅌ > 두꺼운양털\n\n# 황금 재료는 '황금'을 검색해주세요"
     if scope == "accessory":
         return "이름, 클래스, 내용으로 검색 가능합니다. 예) 관통, 기사, 홀리스피어\n초성검색도 가능합니다. ex) ㅅㄹㅂㅋ > 수레바퀴"
     return "이름, 내용, 태그, 줄임말로 검색 가능합니다. 예) 쏟불, 무방비, 주피증\n초성검색도 가능합니다. ex) ㅇㄷㅎㅂ > 아득한빛"
@@ -379,13 +379,15 @@ def indented_wrapped_lines(text: object, width: int, indent: str = "  ") -> list
     if not value:
         return [""]
     wrapped = []
+    bullet = "· "
     for part in DESCRIPTION_BREAK_PATTERN.split(value):
         part = part.strip()
         if URL_PATTERN.search(part):
-            wrapped.append(part)
+            wrapped.append(bullet + part)
             continue
-        wrapped.extend(wrap_text(part, max(1, width - display_width(indent))))
-    return [indent + line for line in wrapped]
+        for index, line in enumerate(wrap_text(part, max(1, width - display_width(bullet)))):
+            wrapped.append((bullet if index == 0 else indent) + line)
+    return wrapped
 
 
 def render_full_width_lines_fixed(
@@ -550,11 +552,11 @@ def print_left_box(lines: list[str]) -> None:
 def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
     rows = search_entries(conn, keyword, 20, scope)
 
-    print_header("mabiDB Rune Search", scope_label)
+    print_header("mabiDB", scope_label)
     print(f"검색어: {keyword}")
     print(f"결과: {len(rows)}건")
     if scope == "gathering":
-        print("황금 재료 채집은 황금을 검색해주세요")
+        print("황금 재료는 '황금'을 검색해주세요")
     print()
 
     if not rows:
@@ -577,9 +579,9 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
 def search_loop(scope: str, scope_label: str) -> None:
     with connect() as conn:
         while True:
-            print_header("mabiDB Rune Search", scope_label)
+            print_header("mabiDB", scope_label)
             print(f"{search_help_text(scope)}\n")
-            print("Enter:검색  1:뒤로가기  2:종료\n")
+            print("\nEnter:검색  1:뒤로가기  2:종료")
             print()
             keyword = input("검색어 > ").strip()
             if is_quit_command(keyword):
