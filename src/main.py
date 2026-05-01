@@ -537,8 +537,7 @@ def print_update_results(app_update_result, db_update_result) -> None:
 
 
 def print_left_box(lines: list[str]) -> None:
-    width = terminal_width()
-    content_width = width - 2
+    content_width = max(display_width(line) for line in lines) + 2
     print("┌" + ("─" * content_width) + "┐")
     for index, line in enumerate(lines):
         if index == 1:
