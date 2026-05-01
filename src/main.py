@@ -513,32 +513,39 @@ def print_result_box(row, attributes: dict[str, str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
-def print_completed_update(label: str, version: str) -> None:
-    print(f"✔️ {label} 업데이트 완료")
-    print(f"        기준일자 : {version}")
-    print()
-
-
 def print_update_results(app_update_result, db_update_result) -> None:
-    if app_update_result is not None:
-        if app_update_result.status == "updated":
-            print_completed_update("앱", app_update_result.message)
-        elif app_update_result.status == "unchanged":
-            print("✔️ 앱 최신버전입니다.")
-            print()
-        elif app_update_result.status == "failed":
-            print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
-            print()
+    lines = ["업데이트 결과"]
+    for label, result, fallback in (
+        ("앱", app_update_result, "기존 앱으로 실행합니다."),
+        ("DB", db_update_result, "기존 DB로 실행합니다."),
+    ):
+        if result is None:
+            continue
+        if result.status == "updated":
+            lines.extend([f"✔️ {label} 업데이트 완료", f"   기준일자 : {result.message}"])
+        elif result.status == "unchanged":
+            lines.append(f"✔️ {label} 최신버전입니다.")
+        elif result.status == "failed":
+            lines.extend([f"! {label} 업데이트 확인 실패", f"   {fallback}"])
+        lines.append("")
 
-    if db_update_result is not None:
-        if db_update_result.status == "updated":
-            print_completed_update("DB", db_update_result.message)
-        elif db_update_result.status == "unchanged":
-            print("✔️ DB 최신버전입니다.")
-            print()
-        elif db_update_result.status == "failed":
-            print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
-            print()
+    while lines and lines[-1] == "":
+        lines.pop()
+    if len(lines) > 1:
+        print_left_box(lines)
+        print()
+
+
+def print_left_box(lines: list[str]) -> None:
+    width = terminal_width()
+    content_width = width - 2
+    print("┌" + ("─" * content_width) + "┐")
+    for index, line in enumerate(lines):
+        if index == 1:
+            print("├" + ("─" * content_width) + "┤")
+        for wrapped in wrap_text(line, content_width - 2):
+            print("│ " + left_cell(wrapped, content_width - 2) + " │")
+    print("└" + ("─" * content_width) + "┘")
 
 
 def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
