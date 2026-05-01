@@ -104,8 +104,16 @@ def update_dir_for_app() -> Path:
     return APP_DIR / ".update"
 
 
+def update_dir_for_target(target_path: Path) -> Path:
+    return target_path.parent / ".update"
+
+
 def update_done_marker_path() -> Path:
     return update_dir_for_app() / UPDATE_DONE_MARKER
+
+
+def update_done_marker_path_for_target(target_path: Path) -> Path:
+    return update_dir_for_target(target_path) / UPDATE_DONE_MARKER
 
 
 def read_completed_app_update() -> AppUpdateResult | None:
@@ -214,7 +222,9 @@ def apply_app_update(args: list[str]) -> int:
     try:
         APP_VERSION_PATH.parent.mkdir(parents=True, exist_ok=True)
         APP_VERSION_PATH.write_text(remote_version + "\n", encoding="utf-8")
-        update_done_marker_path().write_text(remote_version + "\n", encoding="utf-8")
+        marker_path = update_done_marker_path_for_target(target_path)
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_text(remote_version + "\n", encoding="utf-8")
     except OSError as exc:
         print(f"앱 업데이트 상태 저장 실패: {exc}")
 

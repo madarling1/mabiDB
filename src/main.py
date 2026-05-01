@@ -598,11 +598,13 @@ def run_tui() -> None:
     configure_console()
     ensure_local_version_files()
     completed_app_update = read_completed_app_update()
+    print("앱 업데이트 확인 중...")
     app_update_result = update_app_from_remote()
     if app_update_result.status == "restarting":
         return
     if completed_app_update is not None:
         app_update_result = completed_app_update
+    print("DB 업데이트 확인 중...")
     update_result = initialize(update_remote=True)
     scope, scope_label = choose_scope(update_result, app_update_result)
     search_loop(scope, scope_label)
