@@ -15,6 +15,7 @@ CONFIG_PATH = CONFIG_DIR / "remote_db.json"
 VERSION_PATH = DATA_DIR / "db_version.txt"
 REQUEST_HEADERS = {"User-Agent": "mabiDB"}
 REQUIRED_TABLES = {"entries", "rune_details", "search_synonyms"}
+PROGRESS_WIDTH = 14
 
 
 @dataclass(frozen=True)
@@ -76,14 +77,41 @@ def fetch_text(url: str, timeout_seconds: int) -> str:
         return response.read().decode("utf-8").strip()
 
 
-def download_file(url: str, target_path, timeout_seconds: int) -> None:
+def print_step(message: str) -> None:
+    try:
+        print(f"✔️ {message}", flush=True)
+    except UnicodeEncodeError:
+        print(f"[OK] {message}", flush=True)
+
+
+def render_progress(downloaded: int, total: int) -> str:
+    percent = min(100, int(downloaded * 100 / total)) if total > 0 else 0
+    filled = min(PROGRESS_WIDTH, int(PROGRESS_WIDTH * percent / 100))
+    bar = "█" * filled + "░" * (PROGRESS_WIDTH - filled)
+    return f"✔️ 다운로드 중 . . . [ {bar} ] {percent}%"
+
+
+def download_file(url: str, target_path, timeout_seconds: int, *, show_progress: bool = False) -> None:
     with request_url(url, timeout_seconds) as response:
+        total = int(response.headers.get("Content-Length") or 0)
+        downloaded = 0
+        if show_progress and total <= 0:
+            print_step("다운로드 중 . . .")
         with target_path.open("wb") as file:
             while True:
                 chunk = response.read(1024 * 128)
                 if not chunk:
                     break
                 file.write(chunk)
+                downloaded += len(chunk)
+                if show_progress and total > 0:
+                    try:
+                        print("\r" + render_progress(downloaded, total), end="", flush=True)
+                    except UnicodeEncodeError:
+                        percent = min(100, int(downloaded * 100 / total))
+                        print(f"\r[OK] 다운로드 중 . . . {percent}%", end="", flush=True)
+        if show_progress and total > 0:
+            print()
 
 
 def validate_sqlite(db_path: Path) -> None:
@@ -109,6 +137,7 @@ def validate_sqlite(db_path: Path) -> None:
 
 
 def update_database_from_remote(db_path: Path) -> RemoteDbUpdateResult:
+    print_step("DB 업데이트 확인 중 . . .")
     config = load_remote_db_config()
     if not config.database_url:
         return RemoteDbUpdateResult("skipped", "remote DB URL is not configured")
@@ -120,16 +149,19 @@ def update_database_from_remote(db_path: Path) -> RemoteDbUpdateResult:
         if remote_version:
             local_version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else ""
             if db_path.exists() and local_version == remote_version:
+                print_step("DB 최신버전입니다.")
                 return RemoteDbUpdateResult("unchanged", remote_version)
+            print_step(f"새 DB 버전 발견 : {remote_version}")
 
         temp_path = db_path.with_suffix(".sqlite.download")
-        download_file(config.database_url, temp_path, config.timeout_seconds)
+        download_file(config.database_url, temp_path, config.timeout_seconds, show_progress=True)
         validate_sqlite(temp_path)
         os.replace(temp_path, db_path)
 
         if remote_version:
             VERSION_PATH.write_text(remote_version + "\n", encoding="utf-8")
 
+        print_step("DB 업데이트 적용 완료")
         return RemoteDbUpdateResult("updated", remote_version)
     except (OSError, sqlite3.DatabaseError, urllib.error.URLError, urllib.error.HTTPError) as exc:
         try:

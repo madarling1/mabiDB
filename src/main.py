@@ -513,10 +513,6 @@ def print_result_box(row, attributes: dict[str, str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
-def is_unchanged_update_result(update_result) -> bool:
-    return update_result is not None and update_result.status == "unchanged"
-
-
 def print_completed_update(label: str, version: str) -> None:
     print(f"✔️ {label} 업데이트 완료")
     print(f"        기준일자 : {version}")
@@ -524,14 +520,12 @@ def print_completed_update(label: str, version: str) -> None:
 
 
 def print_update_results(app_update_result, db_update_result) -> None:
-    if is_unchanged_update_result(app_update_result) and is_unchanged_update_result(db_update_result):
-        print("앱, DB 모두 최신버전입니다.")
-        print()
-        return
-
     if app_update_result is not None:
         if app_update_result.status == "updated":
             print_completed_update("앱", app_update_result.message)
+        elif app_update_result.status == "unchanged":
+            print("✔️ 앱 최신버전입니다.")
+            print()
         elif app_update_result.status == "failed":
             print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
             print()
@@ -539,6 +533,9 @@ def print_update_results(app_update_result, db_update_result) -> None:
     if db_update_result is not None:
         if db_update_result.status == "updated":
             print_completed_update("DB", db_update_result.message)
+        elif db_update_result.status == "unchanged":
+            print("✔️ DB 최신버전입니다.")
+            print()
         elif db_update_result.status == "failed":
             print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
             print()
@@ -606,14 +603,14 @@ def run_tui() -> None:
     configure_console()
     ensure_local_version_files()
     completed_app_update = read_completed_app_update()
-    print("앱 업데이트 확인 중...")
-    app_update_result = update_app_from_remote()
-    if app_update_result.status == "restarting":
-        return
     if completed_app_update is not None:
         app_update_result = completed_app_update
-    print("DB 업데이트 확인 중...")
+    else:
+        app_update_result = update_app_from_remote()
+        if app_update_result.status == "restarting":
+            return
     update_result = initialize(update_remote=True)
+    print("앱 시작")
     scope, scope_label = choose_scope(update_result, app_update_result)
     search_loop(scope, scope_label)
     print()
