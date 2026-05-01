@@ -378,7 +378,8 @@ def search_gathering_entries_by_name(
         return []
 
     variants = search_variants(keyword)
-    if is_initial_search(keyword):
+    initial_keyword = normalize_search_keyword(keyword)
+    if is_initial_search(initial_keyword):
         rows = conn.execute(
             """
             SELECT
@@ -407,7 +408,7 @@ def search_gathering_entries_by_name(
             ORDER BY e.id ASC
             """
         ).fetchall()
-        return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
+        return [row for row in rows if initial_search_matches(row["name"], initial_keyword)][:limit]
 
     clauses = []
     params: list[str | int] = []
@@ -568,8 +569,9 @@ def search_entries(
     limit: int = 10,
     rune_scope: str | None = None,
 ) -> list[sqlite3.Row]:
-    if is_initial_search(keyword):
-        return search_entries_by_initials(conn, keyword, limit, rune_scope)
+    initial_keyword = normalize_search_keyword(keyword)
+    if is_initial_search(initial_keyword):
+        return search_entries_by_initials(conn, initial_keyword, limit, rune_scope)
 
     if rune_scope == "gathering":
         return search_gathering_entries_by_name(conn, keyword, limit)
