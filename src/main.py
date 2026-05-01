@@ -202,8 +202,7 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
     while True:
         print_header("mabiDB")
         if update_message_pending:
-            print_app_update_result(app_update_result)
-            print_update_result(update_result)
+            print_update_results(app_update_result, update_result)
             update_message_pending = False
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
@@ -514,26 +513,35 @@ def print_result_box(row, attributes: dict[str, str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
-def print_update_result(update_result) -> None:
-    if update_result is None:
-        return
-    if update_result.status == "updated":
-        print(f"DB 업데이트 완료: {update_result.message}")
-        print()
-    elif update_result.status == "failed":
-        print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
-        print()
+def is_unchanged_update_result(update_result) -> bool:
+    return update_result is not None and update_result.status == "unchanged"
 
 
-def print_app_update_result(app_update_result) -> None:
-    if app_update_result is None:
+def print_completed_update(label: str, version: str) -> None:
+    print(f"✔️ {label} 업데이트 완료")
+    print(f"        기준일자 : {version}")
+    print()
+
+
+def print_update_results(app_update_result, db_update_result) -> None:
+    if is_unchanged_update_result(app_update_result) and is_unchanged_update_result(db_update_result):
+        print("앱, DB 모두 최신버전입니다.")
+        print()
         return
-    if app_update_result.status == "updated":
-        print(f"앱 업데이트 완료: {app_update_result.message}")
-        print()
-    if app_update_result.status == "failed":
-        print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
-        print()
+
+    if app_update_result is not None:
+        if app_update_result.status == "updated":
+            print_completed_update("앱", app_update_result.message)
+        elif app_update_result.status == "failed":
+            print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
+            print()
+
+    if db_update_result is not None:
+        if db_update_result.status == "updated":
+            print_completed_update("DB", db_update_result.message)
+        elif db_update_result.status == "failed":
+            print("DB 업데이트 확인 실패. 기존 DB로 실행합니다.")
+            print()
 
 
 def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
