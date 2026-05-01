@@ -5,7 +5,6 @@ import re
 import shutil
 import sys
 import unicodedata
-from pathlib import Path
 
 from app_updater import handle_app_update_args, update_app_from_remote
 from database import DB_PATH, connect, ensure_local_version_files, initialize
@@ -201,7 +200,7 @@ def print_header(title: str, scope_label: str | None = None) -> None:
 def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
     update_message_pending = update_result is not None or app_update_result is not None
     while True:
-        print_header("mabiDB Rune Search")
+        print_header("mabiDB")
         if update_message_pending:
             print_app_update_result(app_update_result)
             print_update_result(update_result)
@@ -302,22 +301,6 @@ def pad_line(line: str, width: int) -> str:
     return line + (" " * max(0, width - display_width(strip_ansi(line))))
 
 
-def print_wrapped_centered_row(values: list[str], widths: list[int]) -> None:
-    wrapped_values = [wrap_text(value, max(1, width - 2)) for value, width in zip(values, widths)]
-    row_count = max(len(lines) for lines in wrapped_values)
-    for row_index in range(row_count):
-        cells = []
-        for lines, width in zip(wrapped_values, widths):
-            line = lines[row_index] if row_index < len(lines) else ""
-            cells.append(center_cell(line, width))
-        print("│" + "│".join(cells) + "│")
-
-
-def print_wrapped_row(values: list[str], widths: list[int], aligns: list[str]) -> None:
-    for line in render_wrapped_row(values, widths, aligns):
-        print(line)
-
-
 def render_wrapped_row(values: list[str], widths: list[int], aligns: list[str]) -> list[str]:
     wrapped_values = [wrap_text(value, max(1, width - 2)) for value, width in zip(values, widths)]
     row_count = max(len(lines) for lines in wrapped_values)
@@ -365,13 +348,6 @@ def render_labeled_lines_row_fixed(
     return rendered
 
 
-def method_display_lines(method: str) -> list[str]:
-    parts = [part.strip() for part in method.split("//") if part.strip()]
-    if not parts:
-        return []
-    return [f"· {part}" for part in parts]
-
-
 def method_wrapped_lines(method: str, width: int) -> list[str]:
     parts = [part.strip() for part in method.split("//") if part.strip()]
     if not parts:
@@ -385,11 +361,6 @@ def method_wrapped_lines(method: str, width: int) -> list[str]:
         for index, line in enumerate(wrapped):
             lines.append((bullet if index == 0 else indent) + line)
     return lines
-
-
-def print_full_width_lines(lines: list[str], content_width: int, *, align: str = "center") -> None:
-    for line in render_full_width_lines(lines, content_width, align=align):
-        print(line)
 
 
 def render_full_width_lines(lines: list[str], content_width: int, *, align: str = "center") -> list[str]:
@@ -489,11 +460,6 @@ def render_gathering_result_card(
     return lines
 
 
-def print_gathering_result_box(row, attributes: dict[str, str]) -> None:
-    for line in render_gathering_result_card(row, attributes, min(64, terminal_width())):
-        print(line)
-
-
 def print_gathering_result_cards(rows, conn) -> None:
     width = terminal_width()
     gap = "   "
@@ -530,10 +496,6 @@ def print_gathering_result_cards(rows, conn) -> None:
 
 
 def print_result_box(row, attributes: dict[str, str]) -> None:
-    if attributes.get("시트") == "Gathering":
-        print_gathering_result_box(row, attributes)
-        return
-
     width = terminal_width()
     content_width = width - 2
     wrap_width = max(20, content_width - 4)
