@@ -207,25 +207,52 @@ def apply_app_update(args: list[str]) -> int:
     parent_pid = int(args[4])
 
     wait_for_process_exit(parent_pid)
+
+    if not replace_app_exe(target_path, new_path, old_path):
+        return 1
+
+    try:
+        APP_VERSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+        APP_VERSION_PATH.write_text(remote_version + "\n", encoding="utf-8")
+        update_done_marker_path().write_text(remote_version + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"앱 업데이트 상태 저장 실패: {exc}")
+
+    try:
+        subprocess.Popen([str(target_path)], cwd=str(target_path.parent), close_fds=True)
+    except OSError as exc:
+        print(f"앱 재실행 실패: {exc}")
+        return 1
+
+    return 0
+
+
+def replace_app_exe(target_path: Path, new_path: Path, old_path: Path) -> bool:
     last_error: OSError | None = None
     for _ in range(80):
         try:
-            old_path.unlink(missing_ok=True)
             if target_path.exists():
+                old_path.unlink(missing_ok=True)
                 os.replace(target_path, old_path)
             os.replace(new_path, target_path)
-            APP_VERSION_PATH.parent.mkdir(parents=True, exist_ok=True)
-            APP_VERSION_PATH.write_text(remote_version + "\n", encoding="utf-8")
-            update_done_marker_path().write_text(remote_version + "\n", encoding="utf-8")
-            subprocess.Popen([str(target_path)], cwd=str(target_path.parent), close_fds=True)
-            return 0
+            return True
         except OSError as exc:
             last_error = exc
+            restore_old_exe(target_path, old_path)
             time.sleep(0.25)
 
     if last_error:
         print(f"앱 업데이트 실패: {last_error}")
-    return 1
+    return False
+
+
+def restore_old_exe(target_path: Path, old_path: Path) -> None:
+    if target_path.exists() or not old_path.exists():
+        return
+    try:
+        os.replace(old_path, target_path)
+    except OSError:
+        pass
 
 
 def wait_for_process_exit(pid: int) -> None:
