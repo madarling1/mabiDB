@@ -6,7 +6,7 @@ import shutil
 import sys
 import unicodedata
 
-from app_updater import handle_app_update_args, update_app_from_remote
+from app_updater import handle_app_update_args, read_completed_app_update, update_app_from_remote
 from database import DB_PATH, connect, ensure_local_version_files, initialize
 from search import get_attributes, search_entries
 
@@ -528,6 +528,9 @@ def print_update_result(update_result) -> None:
 def print_app_update_result(app_update_result) -> None:
     if app_update_result is None:
         return
+    if app_update_result.status == "updated":
+        print(f"앱 업데이트 완료: {app_update_result.message}")
+        print()
     if app_update_result.status == "failed":
         print("앱 업데이트 확인 실패. 기존 앱으로 실행합니다.")
         print()
@@ -594,9 +597,12 @@ def search_loop(scope: str, scope_label: str) -> None:
 def run_tui() -> None:
     configure_console()
     ensure_local_version_files()
+    completed_app_update = read_completed_app_update()
     app_update_result = update_app_from_remote()
     if app_update_result.status == "restarting":
         return
+    if completed_app_update is not None:
+        app_update_result = completed_app_update
     update_result = initialize(update_remote=True)
     scope, scope_label = choose_scope(update_result, app_update_result)
     search_loop(scope, scope_label)

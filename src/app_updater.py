@@ -20,6 +20,7 @@ BUNDLED_APP_VERSION_PATH = RESOURCE_DIR / "data" / "app_version.txt"
 DEFAULT_APP_VERSION_URL = "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/app_version.txt"
 DEFAULT_APP_DOWNLOAD_URL = "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe"
 APPLY_UPDATE_COMMAND = "--apply-app-update"
+UPDATE_DONE_MARKER = "app_update_done.txt"
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,49 @@ def validate_downloaded_exe(path: Path) -> None:
         raise OSError("downloaded file is not a Windows exe")
 
 
+def update_dir_for_app() -> Path:
+    return APP_DIR / ".update"
+
+
+def update_done_marker_path() -> Path:
+    return update_dir_for_app() / UPDATE_DONE_MARKER
+
+
+def read_completed_app_update() -> AppUpdateResult | None:
+    if not is_frozen():
+        return None
+
+    marker_path = update_done_marker_path()
+    if not marker_path.exists():
+        cleanup_update_dir()
+        return None
+
+    version = marker_path.read_text(encoding="utf-8").strip()
+    marker_path.unlink(missing_ok=True)
+    cleanup_update_dir()
+    return AppUpdateResult("updated", version)
+
+
+def cleanup_update_dir() -> None:
+    update_dir = update_dir_for_app()
+    if not update_dir.exists():
+        return
+
+    for name in ("mabiDB.download", "mabiDB.new.exe", "mabiDB.old.exe", "mabiDB.helper.exe"):
+        path = update_dir / name
+        for _ in range(20):
+            try:
+                path.unlink(missing_ok=True)
+                break
+            except OSError:
+                time.sleep(0.1)
+
+    try:
+        update_dir.rmdir()
+    except OSError:
+        pass
+
+
 def update_app_from_remote() -> AppUpdateResult:
     ensure_local_app_version()
     if not is_frozen():
@@ -115,7 +159,7 @@ def update_app_from_remote() -> AppUpdateResult:
             return AppUpdateResult("unchanged", remote_version)
 
         exe_path = Path(sys.executable).resolve()
-        update_dir = exe_path.parent / ".update"
+        update_dir = update_dir_for_app()
         update_dir.mkdir(parents=True, exist_ok=True)
         new_path = update_dir / "mabiDB.new.exe"
         helper_path = update_dir / "mabiDB.helper.exe"
@@ -172,6 +216,7 @@ def apply_app_update(args: list[str]) -> int:
             os.replace(new_path, target_path)
             APP_VERSION_PATH.parent.mkdir(parents=True, exist_ok=True)
             APP_VERSION_PATH.write_text(remote_version + "\n", encoding="utf-8")
+            update_done_marker_path().write_text(remote_version + "\n", encoding="utf-8")
             subprocess.Popen([str(target_path)], cwd=str(target_path.parent), close_fds=True)
             return 0
         except OSError as exc:
