@@ -328,9 +328,14 @@ def render_wrapped_row_fixed(
     height: int,
 ) -> list[str]:
     lines = render_wrapped_row(values, widths, aligns)
-    while len(lines) < height:
-        lines.append(blank_wrapped_row(widths))
-    return lines
+    padding = max(0, height - len(lines))
+    top_padding = padding // 2
+    bottom_padding = padding - top_padding
+    return (
+        [blank_wrapped_row(widths) for _ in range(top_padding)]
+        + lines
+        + [blank_wrapped_row(widths) for _ in range(bottom_padding)]
+    )
 
 
 def render_labeled_lines_row_fixed(
@@ -341,14 +346,20 @@ def render_labeled_lines_row_fixed(
     height: int,
 ) -> list[str]:
     lines = value_lines or [""]
+    label_index = min(height, len(lines)) // 2
     rendered = []
     for index, line in enumerate(lines):
-        label_cell = center_cell(label if index == 0 else "", widths[0])
+        label_cell = center_cell(label if index == label_index else "", widths[0])
         value_cell = left_cell(line, widths[1])
         rendered.append("│" + label_cell + "│" + value_cell + "│")
-    while len(rendered) < height:
-        rendered.append(blank_wrapped_row(widths))
-    return rendered
+    padding = max(0, height - len(rendered))
+    top_padding = padding // 2
+    bottom_padding = padding - top_padding
+    return (
+        [blank_wrapped_row(widths) for _ in range(top_padding)]
+        + rendered
+        + [blank_wrapped_row(widths) for _ in range(bottom_padding)]
+    )
 
 
 def method_wrapped_lines(method: str, width: int) -> list[str]:
