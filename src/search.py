@@ -573,12 +573,18 @@ def search_entries(
     if is_initial_search(initial_keyword):
         return search_entries_by_initials(conn, initial_keyword, limit, rune_scope)
 
-    if rune_scope == "gathering":
-        return search_gathering_entries_by_name(conn, keyword, limit)
-
     terms = expand_search_terms(conn, keyword)
     if not terms:
         return []
+
+    if rune_scope == "gathering":
+        merged: dict[int, sqlite3.Row] = {}
+        for term in terms:
+            for row in search_gathering_entries_by_name(conn, term, limit):
+                current = merged.get(row["id"])
+                if current is None or row["score"] > current["score"]:
+                    merged[row["id"]] = row
+        return sort_search_rows(list(merged.values()), rune_scope)[:limit]
 
     if rune_scope == "accessory":
         class_names = find_accessory_classes(conn, terms)

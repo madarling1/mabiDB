@@ -199,6 +199,7 @@ def print_header(title: str, scope_label: str | None = None) -> None:
 
 def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
     update_message_pending = update_result is not None or app_update_result is not None
+    error_message = ""
     while True:
         print_header("mabiDB")
         if update_message_pending:
@@ -210,11 +211,14 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
         print("  2. 장신구 룬")
         print("  3. 생활 채집")
         print()
+        if error_message:
+            print(error_message)
+            print()
+            error_message = ""
         choice = input("번호 입력 > ").strip()
         if choice in SCOPES:
             return SCOPES[choice]
-        print("1, 2, 3 중 하나를 입력하세요.")
-        input("계속하려면 Enter를 누르세요.")
+        error_message = "1, 2, 3 중 하나를 입력하세요."
 
 
 def search_help_text(scope: str) -> str:
