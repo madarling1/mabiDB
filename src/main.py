@@ -110,14 +110,6 @@ def style_tier_text(text: str) -> str:
     return styled
 
 
-def center_tier_cell(text: object, width: int) -> str:
-    value = fit_cell(text, width).rstrip()
-    padding = max(0, width - display_width(value))
-    left = padding // 2
-    right = padding - left
-    return (" " * left) + style_tier_text(value) + (" " * right)
-
-
 def strip_ansi(text: object) -> str:
     value = str(text)
     result = ""
@@ -164,18 +156,6 @@ def terminal_width() -> int:
 
 def hline(left: str, middle: str, right: str, widths: list[int]) -> str:
     return left + middle.join("─" * width for width in widths) + right
-
-
-def centered_row_line(
-    values: list[str],
-    widths: list[int],
-    styles: list[str | None] | None = None,
-) -> str:
-    styles = styles or [None] * len(values)
-    cells = []
-    for value, width, style in zip(values, widths, styles):
-        cells.append(center_tier_cell(value, width) if style == "tier" else center_cell(value, width))
-    return "│" + "│".join(cells) + "│"
 
 
 def print_full_box(lines: list[str]) -> None:
@@ -253,46 +233,6 @@ def format_tier(tier: str) -> str:
     return ", ".join(TIER_LABELS.get(part, part) for part in parts)
 
 
-def format_result_sections(row, attributes: dict[str, str]) -> list[str]:
-    sections = []
-    if attributes.get("직업") or attributes.get("스킬 슬롯"):
-        class_name = attributes.get("직업", "")
-        skill_slot = attributes.get("스킬 슬롯", "")
-        prefix = class_name
-        if skill_slot:
-            prefix = f"{prefix} 스킬 {skill_slot}".strip()
-        if prefix:
-            sections.append(prefix)
-    if row["description"]:
-        sections.append(row["description"])
-    elif row["summary"]:
-        sections.append(row["summary"])
-    if attributes.get("태그"):
-        sections.append(attributes["태그"])
-    return sections
-
-
-def summary_columns(row, attributes: dict[str, str]) -> list[str]:
-    tier = attributes.get("등급", "")
-    values = [
-        row["name"],
-        TYPE_LABELS.get(row["type"], row["type"]),
-    ]
-    if tier:
-        values.append(format_tier(tier))
-    else:
-        values.append("")
-    return values
-
-
-def summary_widths(width: int) -> list[int]:
-    inner_width = width - 4
-    first = inner_width // 3
-    second = inner_width // 3
-    third = inner_width - first - second
-    return [first, second, third]
-
-
 def gathering_card_widths(width: int) -> list[int]:
     inner_width = width - 3
     label = display_width("채집 장소") + 2
@@ -302,6 +242,28 @@ def gathering_card_widths(width: int) -> list[int]:
 
 def pad_line(line: str, width: int) -> str:
     return line + (" " * max(0, width - display_width(strip_ansi(line))))
+
+
+def print_card_grid(cards: list[list[str]], card_width: int, *, use_two_columns: bool) -> None:
+    gap = "   "
+    step = 2 if use_two_columns else 1
+    for index in range(0, len(cards), step):
+        left = cards[index]
+        right = cards[index + 1] if use_two_columns and index + 1 < len(cards) else None
+        if right is None:
+            for line in left:
+                print(line)
+        else:
+            row_count = max(len(left), len(right))
+            blank = " " * card_width
+            for line_index in range(row_count):
+                left_line = left[line_index] if line_index < len(left) else blank
+                right_line = right[line_index] if line_index < len(right) else blank
+                print(pad_line(left_line, card_width) + gap + right_line)
+
+        if index + step < len(cards):
+            print()
+            print()
 
 
 def render_wrapped_row(values: list[str], widths: list[int], aligns: list[str]) -> list[str]:
@@ -490,44 +452,124 @@ def print_gathering_result_cards(rows, conn) -> None:
         render_gathering_result_card(row, attributes, card_width, section_heights)
         for row, attributes in entries
     ]
+    print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
-    step = 2 if use_two_columns else 1
-    for index in range(0, len(cards), step):
-        left = cards[index]
-        right = cards[index + 1] if use_two_columns and index + 1 < len(cards) else None
-        if right is None:
-            for line in left:
-                print(line)
+
+def rune_card_widths(width: int) -> list[int]:
+    inner_width = width - 3
+    label = display_width("변경 스킬") + 2
+    value = inner_width - label
+    return [label, value]
+
+
+def rune_card_rows(row, attributes: dict[str, str]) -> list[tuple[str, str, str, str]]:
+    tier = attributes.get("등급", "")
+    rows = [
+        ("name", "이름", f"{LIGHT_GREEN}{row['name']}{RESET}", "center"),
+        ("type", "룬 종류", TYPE_LABELS.get(row["type"], row["type"]), "center"),
+        ("tier", "등급", style_tier_text(format_tier(tier)) if tier else "", "center"),
+    ]
+
+    if attributes.get("직업"):
+        rows.append(("class", "직업", attributes["직업"], "center"))
+    if attributes.get("스킬 슬롯"):
+        rows.append(("skill_slot", "변경 스킬", attributes["스킬 슬롯"], "center"))
+
+    description = row["description"] or row["summary"]
+    if description:
+        rows.append(("description", "설명", description, "left"))
+    if attributes.get("태그"):
+        rows.append(("tags", "태그", attributes["태그"], "left"))
+    return rows
+
+
+def rune_value_lines(key: str, value: str, width: int) -> list[str]:
+    content_width = max(1, width - 2)
+    if key in {"description", "tags"}:
+        return [" " + line.lstrip() for line in wrap_text(value, max(1, content_width - 1))]
+    return wrap_text(value, content_width)
+
+
+def render_labeled_value_row_fixed(
+    label: str,
+    value_lines: list[str],
+    widths: list[int],
+    value_align: str,
+    height: int,
+) -> list[str]:
+    padding = max(0, height - len(value_lines))
+    top_padding = padding // 2
+    bottom_padding = padding - top_padding
+    padded_value_lines = ([""] * top_padding) + value_lines + ([""] * bottom_padding)
+    label_index = (len(padded_value_lines) - 1) // 2
+
+    rendered = []
+    for index, line in enumerate(padded_value_lines):
+        label_cell = center_cell(label if index == label_index else "", widths[0])
+        value_cell = left_cell(line, widths[1]) if value_align == "left" else center_cell(line, widths[1])
+        rendered.append("│" + label_cell + "│" + value_cell + "│")
+    return rendered
+
+
+def rune_card_section_heights(row, attributes: dict[str, str], width: int) -> dict[str, int]:
+    widths = rune_card_widths(width)
+    return {
+        key: max(1, len(rune_value_lines(key, value, widths[1])))
+        for key, label, value, value_align in rune_card_rows(row, attributes)
+    }
+
+
+def max_rune_card_heights(entries: list[tuple[object, dict[str, str]]], width: int) -> dict[str, int]:
+    heights = {}
+    for row, attributes in entries:
+        current = rune_card_section_heights(row, attributes, width)
+        for key, value in current.items():
+            heights[key] = max(heights.get(key, 1), value)
+    return heights
+
+
+def render_result_card(
+    row,
+    attributes: dict[str, str],
+    width: int,
+    section_heights: dict[str, int] | None = None,
+) -> list[str]:
+    widths = rune_card_widths(width)
+    rows = rune_card_rows(row, attributes)
+    heights = section_heights or rune_card_section_heights(row, attributes, width)
+    lines = [hline("┌", "┬", "┐", widths)]
+    for index, (key, label, value, value_align) in enumerate(rows):
+        lines.extend(
+            render_labeled_value_row_fixed(
+                label,
+                rune_value_lines(key, value, widths[1]),
+                widths,
+                value_align,
+                heights[key],
+            )
+        )
+        if index == len(rows) - 1:
+            lines.append(hline("└", "┴", "┘", widths))
         else:
-            row_count = max(len(left), len(right))
-            blank = " " * card_width
-            for line_index in range(row_count):
-                left_line = left[line_index] if line_index < len(left) else blank
-                right_line = right[line_index] if line_index < len(right) else blank
-                print(pad_line(left_line, card_width) + gap + right_line)
-
-        if index + step < len(cards):
-            print()
-            print()
+            lines.append(hline("├", "┼", "┤", widths))
+    return lines
 
 
-def print_result_box(row, attributes: dict[str, str]) -> None:
+def print_result_cards(rows, conn) -> None:
     width = terminal_width()
-    content_width = width - 2
-    wrap_width = max(20, content_width - 4)
-    top_widths = summary_widths(width)
-    print(hline("┌", "┬", "┐", top_widths))
-    print(centered_row_line(summary_columns(row, attributes), top_widths, [None, None, "tier"]))
-
-    sections = format_result_sections(row, attributes)
-    if sections:
-        print(hline("├", "┴", "┤", top_widths))
-    for section_index, section in enumerate(sections):
-        for line in wrap_text(section, wrap_width):
-            print("│" + center_cell(line, content_width) + "│")
-        if section_index != len(sections) - 1:
-            print("├" + ("─" * content_width) + "┤")
-    print("└" + ("─" * content_width) + "┘")
+    gap = "   "
+    use_two_columns = width >= 96
+    card_width = (width - display_width(gap)) // 2 if use_two_columns else min(64, width)
+    entries = [
+        (row, attributes_to_dict(get_attributes(conn, row["id"])))
+        for row in rows
+    ]
+    section_heights = max_rune_card_heights(entries, card_width)
+    cards = [
+        render_result_card(row, attributes, card_width, section_heights)
+        for row, attributes in entries
+    ]
+    print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
 
 def print_update_results(app_update_result, db_update_result) -> None:
@@ -582,13 +624,7 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
         print_gathering_result_cards(rows, conn)
         return
 
-    for index, row in enumerate(rows, start=1):
-        attributes = attributes_to_dict(get_attributes(conn, row["id"]))
-        print_result_box(row, attributes)
-        if index != len(rows):
-            print()
-            print()
-            print()
+    print_result_cards(rows, conn)
 
 
 def search_loop(scope: str, scope_label: str) -> None:
