@@ -46,6 +46,7 @@ QUIT_COMMANDS = {"2", "/q", "/quit", "q", "quit", "exit"}
 BACK_COMMANDS = {"1", "/back", "back"}
 URL_PATTERN = re.compile(r"https?://\S+")
 DESCRIPTION_BREAK_PATTERN = re.compile(r"(?<!:)//")
+ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
 
 
 def configure_console() -> None:
@@ -60,7 +61,7 @@ def char_width(char: str) -> int:
 
 
 def display_width(text: object) -> int:
-    return sum(char_width(char) for char in str(text))
+    return sum(char_width(char) for char in strip_ansi(text))
 
 
 def fit_cell(text: object, width: int) -> str:
@@ -111,19 +112,7 @@ def style_tier_text(text: str) -> str:
 
 
 def strip_ansi(text: object) -> str:
-    value = str(text)
-    result = ""
-    index = 0
-    while index < len(value):
-        if value[index] == "\033":
-            end = value.find("m", index)
-            if end == -1:
-                break
-            index = end + 1
-            continue
-        result += value[index]
-        index += 1
-    return result
+    return ANSI_PATTERN.sub("", str(text))
 
 
 def wrap_text(text: object, width: int) -> list[str]:
@@ -132,15 +121,25 @@ def wrap_text(text: object, width: int) -> list[str]:
     for raw_line in value.split("\n"):
         current = ""
         used = 0
-        for char in raw_line:
+        index = 0
+        while index < len(raw_line):
+            ansi_match = ANSI_PATTERN.match(raw_line, index)
+            if ansi_match:
+                current += ansi_match.group(0)
+                index = ansi_match.end()
+                continue
+
+            char = raw_line[index]
             width_for_char = char_width(char)
-            if used + width_for_char > width:
+            if used > 0 and used + width_for_char > width:
                 lines.append(current)
-                current = char
-                used = width_for_char
-            else:
-                current += char
-                used += width_for_char
+                current = ""
+                used = 0
+                continue
+
+            current += char
+            used += width_for_char
+            index += 1
         lines.append(current)
     return lines or [""]
 
