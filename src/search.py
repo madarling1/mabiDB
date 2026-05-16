@@ -121,7 +121,8 @@ def initial_search_matches(text: str, keyword: str) -> bool:
     if not initial_keyword:
         return False
 
-    if hangul_initials(text).startswith(initial_keyword):
+    initials = hangul_initials(text)
+    if initial_keyword in initials:
         return True
 
     return any(hangul_initials(word).startswith(initial_keyword) for word in text.split())
@@ -310,6 +311,7 @@ def search_entries_for_term(
                 ? = ''
                 OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
                 OR (? = 'accessory' AND e.type = 'AccessoryRune')
+                OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
         ),
         ranked AS (
             SELECT id, MAX(score) AS score
@@ -360,6 +362,7 @@ def search_entries_for_term(
             term,
             compact_term,
             compact_term,
+            scope,
             scope,
             scope,
             scope,
@@ -525,6 +528,7 @@ def search_entries_by_initials(
             OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
             OR (? = 'accessory' AND e.type = 'AccessoryRune')
             OR (? = 'gathering' AND e.source = 'db.xlsx#Gathering')
+            OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
         GROUP BY
             e.id,
             e.type,
@@ -535,7 +539,7 @@ def search_entries_by_initials(
             rd.skill_slot
         ORDER BY e.id ASC
         """,
-        (scope, scope, scope, scope),
+        (scope, scope, scope, scope, scope),
     ).fetchall()
     return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
 
@@ -662,8 +666,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10, help="Maximum result count")
     parser.add_argument(
         "--scope",
-        choices=["equipment", "accessory", "gathering"],
-        help="Search group filter: equipment, accessory, or gathering",
+        choices=["equipment", "accessory", "gathering", "barter"],
+        help="Search group filter: equipment, accessory, gathering, or barter",
     )
     args = parser.parse_args()
 

@@ -8,13 +8,21 @@ import unicodedata
 
 from app_updater import handle_app_update_args, read_completed_app_update, update_app_from_remote
 from database import DB_PATH, connect, ensure_local_version_files, initialize
-from search import get_attributes, search_entries
+from search import (
+    expand_search_terms,
+    get_attributes,
+    initial_search_matches,
+    is_initial_search,
+    normalize_search_keyword,
+    search_entries,
+)
 
 
 SCOPES = {
     "1": ("equipment", "무기 / 방어구 / 엠블럼"),
     "2": ("accessory", "장신구"),
     "3": ("gathering", "생활 채집"),
+    "4": ("barter", "물물교환"),
 }
 
 TYPE_LABELS = {
@@ -23,6 +31,7 @@ TYPE_LABELS = {
     "EmblemRune": "엠블럼",
     "AccessoryRune": "장신구",
     "Item": "아이템",
+    "Barter": "물물교환",
 }
 
 TIER_LABELS = {
@@ -36,6 +45,7 @@ TIER_LABELS = {
 
 RESET = "\033[0m"
 LIGHT_GREEN = "\033[38;5;114m"
+HIGHLIGHT = "\033[93m"
 TIER_STYLES = {
     "전설": "\033[91m",
     "신화": "\033[93m",
@@ -189,6 +199,7 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
         print("  1. 무기 / 방어구 / 엠블럼 룬")
         print("  2. 장신구 룬")
         print("  3. 생활 채집")
+        print("  4. 물물교환")
         print()
         if error_message:
             print(error_message)
@@ -197,12 +208,14 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
         choice = input("번호 입력 > ").strip()
         if choice in SCOPES:
             return SCOPES[choice]
-        error_message = "1, 2, 3 중 하나를 입력하세요."
+        error_message = "1, 2, 3, 4 중 하나를 입력하세요."
 
 
 def search_help_text(scope: str) -> str:
     if scope == "gathering":
         return "채집물 이름으로 검색 가능합니다. 예) 양털, 마나석 등\n초성검색도 가능합니다. ex) ㄷㄲㅇㅇㅌ > 두꺼운양털\n\n# 황금 재료는 '황금'을 검색해주세요"
+    if scope == "barter":
+        return "NPC명, 아이템명, 지역으로 검색 가능합니다. 예) 말콤, 상급 양털, 티르코네일\n초성검색도 가능합니다. ex) ㅁㅋ > 말콤"
     if scope == "accessory":
         return "이름, 클래스, 내용으로 검색 가능합니다. 예) 관통, 기사, 홀리스피어\n초성검색도 가능합니다. ex) ㅅㄹㅂㅋ > 수레바퀴"
     return "이름, 내용, 태그, 줄임말로 검색 가능합니다. 예) 쏟불, 무방비, 주피증\n초성검색도 가능합니다. ex) ㅇㄷㅎㅂ > 아득한빛"
@@ -454,6 +467,288 @@ def print_gathering_result_cards(rows, conn) -> None:
     print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
 
+def padded_display_width(value: str, minimum: int) -> int:
+    return max(display_width(value) + 2, minimum)
+
+
+def barter_table_base_widths(entries: list[tuple[object, dict[str, str]]]) -> list[int]:
+    _, first_attributes = entries[0]
+    arrow_width = 3
+    give_width = max(
+        [padded_display_width("주는 아이템", display_width("주는 아이템") + 2)]
+        + [padded_display_width(attributes.get("요구 아이템", ""), 4) for row, attributes in entries]
+    )
+    get_width = max(
+        [padded_display_width("받는 아이템", display_width("받는 아이템") + 2)]
+        + [padded_display_width(attributes.get("획득 아이템", ""), 4) for row, attributes in entries]
+    )
+    frequency_width = max(
+        [
+            padded_display_width("교환횟수", display_width("교환횟수") + 2),
+            padded_display_width(barter_location_text(first_attributes), 10),
+        ]
+        + [padded_display_width(attributes.get("횟수", ""), 8) for row, attributes in entries]
+    )
+    return [give_width, arrow_width, get_width, frequency_width]
+
+
+def barter_table_widths_for_entries(
+    entries: list[tuple[object, dict[str, str]]],
+    content_width: int,
+) -> list[int]:
+    give_width, arrow_width, get_width, frequency_width = barter_table_base_widths(entries)
+    base_content_width = give_width + arrow_width + get_width + frequency_width + 3
+    if base_content_width <= content_width:
+        extra = content_width - base_content_width
+        give_width += extra // 2
+        get_width += extra - (extra // 2)
+    else:
+        frequency_width = min(frequency_width, max(display_width("교환횟수") + 2, min(18, content_width // 5)))
+        item_space = max(8, content_width - arrow_width - frequency_width - 3)
+        give_width = item_space // 2
+        get_width = item_space - give_width
+
+    return [give_width, arrow_width, get_width, frequency_width]
+
+
+def barter_header_widths_from_table(table_widths: list[int]) -> list[int]:
+    left = table_widths[0] + table_widths[1] + table_widths[2] + 2
+    return [left, table_widths[3]]
+
+
+def column_break_positions(widths: list[int]) -> list[int]:
+    positions = []
+    position = 0
+    for width in widths[:-1]:
+        position += width
+        positions.append(position)
+        position += 1
+    return positions
+
+
+def transition_hline(content_width: int, upper_widths: list[int], lower_widths: list[int]) -> str:
+    chars = ["─"] * content_width
+    for position in column_break_positions(upper_widths):
+        chars[position] = "┴"
+    for position in column_break_positions(lower_widths):
+        chars[position] = "┼" if chars[position] != "─" else "┬"
+    return "├" + "".join(chars) + "┤"
+
+
+def barter_card_width_for_entries(
+    entries: list[tuple[object, dict[str, str]]],
+    max_width: int,
+) -> int:
+    _, first_attributes = entries[0]
+    table_widths = barter_table_base_widths(entries)
+    table_content_width = sum(table_widths) + len(table_widths) - 1
+    header_content_width = (
+        padded_display_width(barter_header_left_text(first_attributes, len(entries)), 10)
+        + padded_display_width(barter_location_text(first_attributes), 10)
+        + 1
+    )
+    return min(max_width, max(table_content_width, header_content_width) + 2)
+
+
+def barter_location_text(attributes: dict[str, str]) -> str:
+    location = attributes.get("지역", "")
+    detail_location = attributes.get("위치", "")
+    if location and detail_location:
+        return f"{location} · {detail_location}"
+    return location or detail_location
+
+
+def barter_header_left_text(attributes: dict[str, str], count: int) -> str:
+    return attributes.get("NPC", "")
+
+
+def highlighted_barter_header_left_text(attributes: dict[str, str], count: int, matches) -> str:
+    return highlight_if_match(attributes.get("NPC", ""), matches)
+
+
+def barter_group_key(attributes: dict[str, str]) -> tuple[str, str, str]:
+    return (
+        attributes.get("NPC", ""),
+        attributes.get("지역", ""),
+        attributes.get("위치", ""),
+    )
+
+
+def all_barter_entries(conn) -> list[tuple[object, dict[str, str]]]:
+    rows = conn.execute(
+        """
+        SELECT
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            0 AS score,
+            '' AS class_name,
+            NULL AS skill_slot,
+            COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+        FROM entries e
+        LEFT JOIN entry_tags et ON et.entry_id = e.id
+        LEFT JOIN tags t ON t.id = et.tag_id
+        WHERE e.source = 'db.xlsx#Barter'
+        GROUP BY e.id, e.type, e.name, e.summary, e.description
+        ORDER BY e.id ASC
+        """
+    ).fetchall()
+    return [(row, attributes_to_dict(get_attributes(conn, row["id"]))) for row in rows]
+
+
+def render_full_width_lines_centered_fixed(
+    lines: list[str],
+    content_width: int,
+    *,
+    align: str = "center",
+    height: int,
+) -> list[str]:
+    rendered = render_full_width_lines(lines, content_width, align=align)
+    padding = max(0, height - len(rendered))
+    top_padding = padding // 2
+    bottom_padding = padding - top_padding
+    blank = "│" + (" " * content_width) + "│"
+    return ([blank] * top_padding) + rendered + ([blank] * bottom_padding)
+
+
+def barter_matcher(conn, keyword: str):
+    initial_keyword = normalize_search_keyword(keyword)
+    if is_initial_search(initial_keyword):
+        return lambda value: bool(value) and initial_search_matches(value, initial_keyword)
+
+    terms = expand_search_terms(conn, keyword)
+    compact_terms = ["".join(term.split()) for term in terms]
+
+    def matches(value: str) -> bool:
+        if not value:
+            return False
+        compact_value = "".join(value.split())
+        return any(term in value for term in terms) or any(
+            compact_term and compact_term in compact_value
+            for compact_term in compact_terms
+        )
+
+    return matches
+
+
+def highlight_if_match(value: str, matches) -> str:
+    if value and matches(value):
+        return f"{HIGHLIGHT}{value}{RESET}"
+    return value
+
+
+def barter_card_section_heights(
+    entries: list[tuple[object, dict[str, str]]],
+    width: int,
+) -> dict[str, int]:
+    content_width = width - 2
+    table_widths = barter_table_widths_for_entries(entries, content_width)
+    header_widths = barter_header_widths_from_table(table_widths)
+    _, first_attributes = entries[0]
+    header_height = len(
+        render_wrapped_row(
+            [
+                barter_header_left_text(first_attributes, len(entries)),
+                barter_location_text(first_attributes),
+            ],
+            header_widths,
+            ["left", "left"],
+        )
+    )
+    item_heights = []
+    for row, attributes in entries:
+        item_heights.append(
+            len(
+                render_wrapped_row(
+                    [
+                        attributes.get("요구 아이템", ""),
+                        "→",
+                        attributes.get("획득 아이템", ""),
+                        attributes.get("횟수", ""),
+                    ],
+                    table_widths,
+                    ["center", "center", "center", "center"],
+                )
+            )
+        )
+
+    return {
+        "header": max(1, header_height),
+        "items": item_heights,
+    }
+
+
+def render_barter_result_card(
+    entries: list[tuple[object, dict[str, str]]],
+    width: int,
+    matches,
+) -> list[str]:
+    content_width = width - 2
+    table_widths = barter_table_widths_for_entries(entries, content_width)
+    header_widths = barter_header_widths_from_table(table_widths)
+    heights = barter_card_section_heights(entries, width)
+    _, first_attributes = entries[0]
+
+    lines = [hline("┌", "┬", "┐", header_widths)]
+    lines.extend(
+        render_wrapped_row_fixed(
+            [
+                highlighted_barter_header_left_text(first_attributes, len(entries), matches),
+                highlight_if_match(barter_location_text(first_attributes), matches),
+            ],
+            header_widths,
+            ["center", "center"],
+            height=heights["header"],
+        )
+    )
+    lines.append(transition_hline(content_width, header_widths, table_widths))
+    lines.extend(render_wrapped_row_fixed(["주는 아이템", "→", "받는 아이템", "교환횟수"], table_widths, ["center", "center", "center", "center"], 1))
+    lines.append(hline("├", "┼", "┤", table_widths))
+    for index, (row, attributes) in enumerate(entries):
+        lines.extend(
+            render_wrapped_row_fixed(
+                [
+                    highlight_if_match(attributes.get("요구 아이템", ""), matches),
+                    "→",
+                    highlight_if_match(attributes.get("획득 아이템", ""), matches),
+                    highlight_if_match(attributes.get("횟수", ""), matches),
+                ],
+                table_widths,
+                ["center", "center", "center", "center"],
+                heights["items"][index],
+            )
+        )
+        if index == len(entries) - 1:
+            lines.append(hline("└", "┴", "┘", table_widths))
+    return lines
+
+
+def print_barter_result_cards(rows, conn, keyword: str) -> None:
+    width = terminal_width()
+    matched_entries = [(row, attributes_to_dict(get_attributes(conn, row["id"]))) for row in rows]
+    matched_keys = list(dict.fromkeys(barter_group_key(attributes) for row, attributes in matched_entries))
+    all_entries = all_barter_entries(conn)
+    matches = barter_matcher(conn, keyword)
+    groups = [
+        [
+            (row, attributes)
+            for row, attributes in all_entries
+            if barter_group_key(attributes) == key
+        ]
+        for key in matched_keys
+    ]
+    card_width = max(barter_card_width_for_entries(group, width) for group in groups)
+    gap = "   "
+    use_two_columns = width >= (card_width * 2 + display_width(gap))
+    cards = [
+        render_barter_result_card(group, card_width, matches)
+        for group in groups
+    ]
+    print_card_grid(cards, card_width, use_two_columns=use_two_columns)
+
+
 def rune_card_widths(width: int) -> list[int]:
     inner_width = width - 3
     label = display_width("변경 스킬") + 2
@@ -621,6 +916,9 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
 
     if scope == "gathering":
         print_gathering_result_cards(rows, conn)
+        return
+    if scope == "barter":
+        print_barter_result_cards(rows, conn, keyword)
         return
 
     print_result_cards(rows, conn)
