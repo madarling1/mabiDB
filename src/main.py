@@ -8,6 +8,7 @@ import unicodedata
 
 from app_updater import handle_app_update_args, read_completed_app_update, update_app_from_remote
 from database import DB_PATH, connect, ensure_local_version_files, initialize
+from reporter import build_revision_request, submit_revision_request
 from search import (
     expand_search_terms,
     get_attributes,
@@ -54,6 +55,7 @@ TIER_STYLES = {
 }
 QUIT_COMMANDS = {"2", "/q", "/quit", "q", "quit", "exit"}
 BACK_COMMANDS = {"1", "/back", "back"}
+REVISION_REQUEST_COMMANDS = {"0"}
 URL_PATTERN = re.compile(r"https?://\S+")
 DESCRIPTION_BREAK_PATTERN = re.compile(r"(?<!:)//")
 ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
@@ -228,6 +230,10 @@ def is_quit_command(text: str) -> bool:
 def is_back_command(text: str, *, allow_b: bool = False) -> bool:
     commands = BACK_COMMANDS | ({"b"} if allow_b else set())
     return text.lower() in commands
+
+
+def is_revision_request_command(text: str) -> bool:
+    return text.lower() in REVISION_REQUEST_COMMANDS
 
 
 def attributes_to_dict(attributes) -> dict[str, str]:
@@ -900,7 +906,7 @@ def print_left_box(lines: list[str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
-def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
+def print_results(conn, keyword: str, scope: str, scope_label: str):
     rows = search_entries(conn, keyword, 20, scope)
 
     print_header("mabiDB", scope_label)
@@ -912,16 +918,68 @@ def print_results(conn, keyword: str, scope: str, scope_label: str) -> None:
 
     if not rows:
         print_full_box(["검색 결과가 없습니다."])
-        return
+        return rows
 
     if scope == "gathering":
         print_gathering_result_cards(rows, conn)
-        return
+        return rows
     if scope == "barter":
         print_barter_result_cards(rows, conn, keyword)
-        return
+        return rows
 
     print_result_cards(rows, conn)
+    return rows
+
+
+def recent_result_items(rows, *, limit: int = 5) -> list[dict[str, object]]:
+    items = []
+    for row in rows[:limit]:
+        item_type = row["type"]
+        items.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "type": item_type,
+                "type_label": TYPE_LABELS.get(item_type, item_type),
+            }
+        )
+    return items
+
+
+def prompt_revision_request(keyword: str, scope: str, scope_label: str, rows) -> str:
+    print_header("mabiDB", scope_label)
+    print_full_box(["수정 요청"])
+    print("잘못된 정보나 수정요청 내용을 적어주세요!")
+    print("취소하려면 q 또는 ㅂ을 입력하거나 그냥 Enter를 누르세요.")
+    print()
+    print(f"검색어: {keyword}")
+    print()
+
+    recent_results = recent_result_items(rows)
+    if recent_results:
+        print("최근 검색 결과")
+        for index, item in enumerate(recent_results, 1):
+            print(f"  {index}. {item['name']} ({item['type_label']})")
+        print()
+    else:
+        print("최근 검색 결과가 없습니다. 누락된 정보 요청이면 내용을 적어주세요.")
+        print()
+
+    message = input("내용 > ").strip()
+    if not message or message.lower() in {"q", "ㅂ"}:
+        return "수정 요청이 취소되었습니다."
+
+    report = build_revision_request(
+        scope=scope,
+        scope_label=scope_label,
+        keyword=keyword,
+        message=message,
+        recent_results=recent_results,
+    )
+    result = submit_revision_request(report)
+    if result.status == "sent":
+        return "✔ 수정 요청이 접수되었습니다. 감사합니다."
+    return "! 수정 요청 전송에 실패했습니다. 잠시 후 다시 시도해주세요."
 
 
 def search_loop(scope: str, scope_label: str) -> None:
@@ -941,12 +999,20 @@ def search_loop(scope: str, scope_label: str) -> None:
             if not keyword:
                 continue
 
+            status_message = ""
             while True:
-                print_results(conn, keyword, scope, scope_label)
-                print("Enter:검색  1:뒤로가기  2:종료\n")
+                rows = print_results(conn, keyword, scope, scope_label)
+                if status_message:
+                    print(status_message)
+                    print()
+                    status_message = ""
+                print("Enter:검색  0:수정 요청  1:뒤로가기  2:종료\n")
                 next_input = input("검색어 > ").strip()
                 if is_quit_command(next_input):
                     return
+                if is_revision_request_command(next_input):
+                    status_message = prompt_revision_request(keyword, scope, scope_label, rows)
+                    continue
                 if is_back_command(next_input, allow_b=True):
                     scope, scope_label = choose_scope()
                     break
