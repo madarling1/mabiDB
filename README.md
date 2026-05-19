@@ -1,24 +1,26 @@
-# mabiDB
-
-마비노기 모바일 정보를 검색하는 터미널 프로그램입니다.
+## mabiDB
+윈도우 환경에서 동작하는 파이썬 기반 마비노기 모바일 정보 검색 프로그램입니다.<br>
+현재 룬, 생활 채집물, 물물교환 정보에 대해 검색 할 수 있습니다.
 
 ## 다운로드
-
-프로그램은 GitHub **Release**에서 받으면 됩니다.
-
 1. 이 저장소 오른쪽의 [Releases](../../releases)를 엽니다.
 2. 최신 버전의 `mabiDB.exe`를 다운로드하고 `USER_GUIDE.txt`를 확인합니다.
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 > 💡 보안 경고가 뜨면 **"추가 정보" → "실행"** 을 눌러주세요. (바이러스 아니에요!)<br>
 > 💡 또는 **"점 세개" → "유지" → "삭제버튼 우측 드롭다운 길게 클릭" → "그래도 계속"** 을 눌러주세요.
 
-실행 후 DB 파일은 `%LOCALAPPDATA%\mabiDB` 경로에 저장됩니다.
-현재 적용된 DB 버전은 `%LOCALAPPDATA%\mabiDB\data\db_version.txt` 에 표시됩니다.
+실행 후 DB 파일은 `%LOCALAPPDATA%\mabiDB` 경로에 저장됩니다.<br>
+현재 적용된 앱 및 DB 버전은 `%LOCALAPPDATA%\mabiDB\data\db_version.txt` 에 표시됩니다.
+<br>
 
 ## 사용 방법
 
-실행하면 검색 범위를 먼저 선택합니다.
 
+### 1. 검색
+<img width="492" height="265" alt="image" src="https://github.com/user-attachments/assets/925bb1e9-50db-40cd-8bfa-7847b9abbeef" />
+
+실행하면 검색 범위를 먼저 선택합니다.
+<br>
 ```text
 숫자 키를 입력 후 엔터
 1 : 무기 / 방어구 / 엠블럼 룬
@@ -26,15 +28,9 @@
 3 : 생활 채집
 4 : 물물교환
 ```
-
 검색어를 입력하면 관련 목록이 표시됩니다.
-자주 쓰는 용어, 줄인말, 태그 등으로 검색할 수 있습니다.
-채집물은 채집물 이름으로 검색해 주세요.<br>
-<br>
-검색 결과 화면에서 `0`을 입력하면 잘못된 정보나 오류 제보 및 수정 요청을 보낼 수 있습니다.<br>
-수정 요청 화면에서 `q`, `ㅂ` 또는 빈 Enter를 입력하면 취소됩니다.
-<br>
-<br>
+자주 쓰는 용어, 줄인말, 클래스명, 태그 등으로 검색할 수 있습니다.
+채집물은 채집물 이름으로 검색해 주세요.<br><br>
 초성 검색 기능, 영타 검색 기능을 지원합니다
 ```text
 ㅇㄷㅎㅂ > 아득한빛
@@ -42,38 +38,20 @@ dkemr > 아득
 ```
 과 같이 검색 할 수 있어요
 
-## 업데이트
+---
+### 2. 수정 요청
+<img width="491" height="160" alt="image" src="https://github.com/user-attachments/assets/7710fcc7-0560-440b-b56c-86ab0000e36b" />
+
+검색 결과 화면에서 `0`을 입력하면 제작자에게 오류 또는 잘못된 정보 수정 요청을 보낼 수 있습니다.<br>
+수정 요청 화면에서 `q`, `ㅂ` 또는 빈 Enter를 입력하면 취소됩니다.
+
+
+---
+### 3. 업데이트
 
 프로그램을 실행하면 자동으로 최신 앱 버전과 DB 업데이트 내역이 있는지 확인합니다.
-새 업데이트가 있으면 자동으로 업데이트 한 후 exe를 교체합니다.
+새 업데이트가 있으면 자동으로 업데이트 한 후 exe를 교체합니다.<br>
 
-
-DB는 신규 패치가 있을 경우 주기적으로 업데이트 됩니다.
-잘못된 정보 / 변경점 요청은 [여기](https://github.com/madarling1/mabiDB/issues/new)에 적어주세요!
+DB는 신규 패치가 있을 경우 주기적으로 업데이트 됩니다.<br>
+잘못된 정보 / 변경점 요청은 [여기](https://github.com/madarling1/mabiDB/issues/new)에 적어주세요!<br>
 또는 프로그램 내의 수정 요청 기능을 이용 하셔도 돼요
-
-
-## 저장소 구조
-
-```text
-mabiDB/
-  README.md
-  USER_GUIDE.txt
-  build.ps1         # dist/mabiDB.exe 단일 실행 파일을 생성합니다.
-  config/           # 원격 DB와 버전 파일 URL을 설정합니다.
-    remote_db.json
-  data/
-    app_version.txt # 앱 업데이트 버전입니다.
-    db_version.txt  # DB 업데이트 버전입니다.
-    mobidb.sqlite   # exe에 포함되는 기본 DB입니다.
-  resources/
-    schema.sql      # DB 테이블 구조를 정의합니다.
-  src/
-    main.py         # 터미널 UI를 실행하고 검색 흐름을 제어합니다.
-    paths.py        # exe 실행 여부에 따라 앱/리소스/사용자 데이터 경로를 정합니다.
-    database.py     # SQLite 연결, 기본 DB 복사, 스키마 초기화를 담당합니다.
-    app_updater.py  # 앱 버전 확인, 다운로드, 교체 업데이트를 처리합니다.
-    db_updater.py   # DB 버전 확인과 다운로드 업데이트를 처리합니다.
-    reporter.py     # 수정 요청을 개발자에게 전송합니다.
-    search.py       # 검색 로직을 처리합니다.
-```
