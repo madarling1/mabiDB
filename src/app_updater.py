@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,7 @@ DEFAULT_APP_VERSION_URL = "https://raw.githubusercontent.com/madarling1/mabiDB/r
 DEFAULT_APP_DOWNLOAD_URL = "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe"
 APPLY_UPDATE_COMMAND = "--apply-app-update"
 UPDATE_DONE_MARKER = "app_update_done.txt"
+DATE_VERSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{3}$")
 
 
 @dataclass(frozen=True)
@@ -87,10 +89,21 @@ def read_local_app_version() -> str:
     return APP_VERSION_PATH.read_text(encoding="utf-8").strip() if APP_VERSION_PATH.exists() else ""
 
 
-def is_remote_newer(local_version: str, remote_version: str) -> bool:
+def is_date_version(version: str) -> bool:
+    return bool(DATE_VERSION_RE.fullmatch(version.strip()))
+
+
+def should_update_from_remote(local_version: str, remote_version: str) -> bool:
     local = local_version.strip()
     remote = remote_version.strip()
-    return bool(remote and remote != local and remote > local)
+
+    if not remote:
+        return False
+    if not is_date_version(remote):
+        raise ValueError(f"invalid remote app version: {remote!r}")
+    if not local or not is_date_version(local):
+        return True
+    return local != remote
 
 
 def validate_downloaded_exe(path: Path) -> None:
@@ -171,7 +184,7 @@ def update_app_from_remote() -> AppUpdateResult:
     try:
         local_version = read_local_app_version()
         remote_version = fetch_text(config.app_version_url, config.timeout_seconds)
-        if not is_remote_newer(local_version, remote_version):
+        if not should_update_from_remote(local_version, remote_version):
             print_step("앱 최신버전입니다.")
             return AppUpdateResult("unchanged", remote_version)
         print_step(f"새 앱 버전 발견 : {remote_version}")
