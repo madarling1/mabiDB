@@ -1205,7 +1205,7 @@ def recent_result_items(rows, *, limit: int = 5) -> list[dict[str, object]]:
 def prompt_revision_request(keyword: str, scope: str, scope_label: str, rows) -> str:
     print_header("mabiDB", scope_label)
     print_full_box(["수정 요청"])
-    print("잘못된 정보나 수정요청 내용을 적어주세요!")
+    print("잘못된 정보나 수정요청 내용을 적어주세요! 상세히 적어주시면 좋아요ㅠ")
     print("취소하려면 q 또는 ㅂ을 입력하거나 그냥 Enter를 누르세요.")
     print()
     print(f"검색어: {keyword}")
