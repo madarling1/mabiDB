@@ -6,8 +6,8 @@ import sqlite3
 from database import DB_PATH, connect, initialize
 
 
-EQUIPMENT_RUNE_TYPES = ("WeaponRune", "ArmorRune", "EmblemRune")
-ACCESSORY_RUNE_TYPE = "AccessoryRune"
+ACCESSORY_RUNE_SOURCE = "db.xlsx#AccRune"
+ACCESSORY_RUNE_SHEET = "AccRune"
 RECIPE_SOURCE = "db.xlsx#Recipe"
 DECO_SOURCE = "db.xlsx#Deco"
 CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
@@ -118,6 +118,23 @@ def is_initial_search(text: str) -> bool:
     return bool(compact) and all(char in CHOSEONG_SET for char in compact)
 
 
+def is_hangul_char(char: str) -> bool:
+    code = ord(char)
+    return 0xAC00 <= code <= 0xD7A3 or 0x1100 <= code <= 0x11FF or 0x3130 <= code <= 0x318F
+
+
+def should_convert_english_to_korean(text: str) -> bool:
+    return not any(is_hangul_char(char) for char in text)
+
+
+def fold_search_text(text: object) -> str:
+    return str(text).casefold()
+
+
+def compact_search_text(text: object) -> str:
+    return "".join(fold_search_text(text).split())
+
+
 def initial_search_matches(text: str, keyword: str) -> bool:
     initial_keyword = "".join(keyword.split())
     if not initial_keyword:
@@ -131,8 +148,9 @@ def initial_search_matches(text: str, keyword: str) -> bool:
 
 
 def search_variants(keyword: str) -> list[str]:
-    converted = english_to_korean(keyword.strip())
-    return [converted or keyword.strip()]
+    stripped = keyword.strip()
+    converted = normalize_search_keyword(stripped)
+    return list(dict.fromkeys(term for term in (converted, stripped) if term))
 
 
 def expand_search_terms(conn: sqlite3.Connection, keyword: str) -> list[str]:
@@ -149,12 +167,13 @@ def expand_search_terms(conn: sqlite3.Connection, keyword: str) -> list[str]:
         """,
         (base_keyword,),
     ).fetchall()
-    terms = [*search_variants(base_keyword), *[row["expansion"] for row in rows]]
+    terms = [*search_variants(keyword), *[row["expansion"] for row in rows]]
     return list(dict.fromkeys(term for term in terms if term))
 
 
 def normalize_search_keyword(keyword: str) -> str:
-    return english_to_korean(keyword.strip())
+    stripped = keyword.strip()
+    return english_to_korean(stripped) if should_convert_english_to_korean(stripped) else stripped
 
 
 def find_accessory_classes(conn: sqlite3.Connection, terms: list[str]) -> list[str]:
@@ -166,11 +185,14 @@ def find_accessory_classes(conn: sqlite3.Connection, terms: list[str]) -> list[s
             """
             SELECT DISTINCT class_name
             FROM rune_details
-            WHERE rune_kind = ?
-              AND (class_name = ? OR REPLACE(class_name, ' ', '') = ?)
+            WHERE source_sheet = ?
+              AND (
+                class_name COLLATE NOCASE = ?
+                OR REPLACE(class_name, ' ', '') COLLATE NOCASE = ?
+              )
             ORDER BY class_name
             """,
-            (ACCESSORY_RUNE_TYPE, term, compact_term),
+            (ACCESSORY_RUNE_SHEET, term, compact_term),
         ).fetchall()
         for row in rows:
             class_name = row["class_name"]
@@ -205,7 +227,7 @@ def search_accessory_classes(
         JOIN rune_details rd ON rd.entry_id = e.id
         LEFT JOIN entry_tags et ON et.entry_id = e.id
         LEFT JOIN tags t ON t.id = et.tag_id
-        WHERE e.type = ?
+        WHERE e.source = ?
           AND rd.class_name IN ({placeholders})
         GROUP BY
             e.id,
@@ -218,7 +240,7 @@ def search_accessory_classes(
         ORDER BY rd.class_name ASC, rd.skill_slot ASC, e.name ASC
         LIMIT ?
         """,
-        (ACCESSORY_RUNE_TYPE, *class_names, limit),
+        (ACCESSORY_RUNE_SOURCE, *class_names, limit),
     ).fetchall()
 
 
@@ -241,7 +263,7 @@ def search_entries_for_term(
         WITH matched AS (
             SELECT e.id, 100 AS score
             FROM entries e
-            WHERE e.name = ?
+            WHERE e.name COLLATE NOCASE = ?
 
             UNION ALL
 
@@ -311,8 +333,8 @@ def search_entries_for_term(
             JOIN entries e ON e.id = m.id
             WHERE
                 ? = ''
-                OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
-                OR (? = 'accessory' AND e.type = 'AccessoryRune')
+                OR (? = 'equipment' AND e.source = 'db.xlsx#Runes')
+                OR (? = 'accessory' AND e.source = 'db.xlsx#AccRune')
                 OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
                 OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')
                 OR (? = 'deco' AND e.source = 'db.xlsx#Deco')
@@ -431,7 +453,7 @@ def search_gathering_entries_by_name(
                 SELECT e.id, 100 AS score
                 FROM entries e
                 WHERE e.source = 'db.xlsx#Gathering'
-                  AND e.name = ?
+                  AND e.name COLLATE NOCASE = ?
                 """,
                 """
                 SELECT e.id, 80 AS score
@@ -576,7 +598,7 @@ def search_craft_entries_by_name(
                 SELECT e.id, 100 AS score
                 FROM entries e
                 WHERE e.source = ?
-                  AND e.name = ?
+                  AND e.name COLLATE NOCASE = ?
                 """,
                 """
                 SELECT e.id, 80 AS score
@@ -695,14 +717,16 @@ def recipe_ingredient_match_score(value: str, terms: list[str], initial_keyword:
         return 1 if initial_search_matches(value, initial_keyword) else 0
 
     ingredient_name = recipe_ingredient_name(value)
-    compact_name = "".join(ingredient_name.split())
-    compact_terms = ["".join(term.split()) for term in terms]
-    if any(term == ingredient_name for term in terms) or any(
+    folded_name = fold_search_text(ingredient_name)
+    folded_terms = [fold_search_text(term) for term in terms]
+    compact_name = compact_search_text(ingredient_name)
+    compact_terms = [compact_search_text(term) for term in terms]
+    if any(term == folded_name for term in folded_terms) or any(
         compact_term == compact_name
         for compact_term in compact_terms
     ):
         return 2
-    if any(term in ingredient_name for term in terms) or any(
+    if any(term in folded_name for term in folded_terms) or any(
         compact_term in compact_name
         for compact_term in compact_terms
     ):
@@ -714,7 +738,7 @@ def search_craft_entries_by_ingredient(
     conn: sqlite3.Connection,
     keyword: str,
     source: str,
-    limit: int = 50,
+    limit: int | None = 50,
 ) -> list[sqlite3.Row]:
     initial_keyword = normalize_search_keyword(keyword)
     terms = [initial_keyword] if is_initial_search(initial_keyword) else expand_search_terms(conn, keyword)
@@ -737,13 +761,14 @@ def search_craft_entries_by_ingredient(
             partial_matches.append(row)
 
     matched = exact_matches or partial_matches
-    return sorted(matched, key=lambda row: row["name"])[:limit]
+    rows = sorted(matched, key=lambda row: row["name"])
+    return rows if limit is None else rows[:limit]
 
 
 def search_recipe_entries_by_ingredient(
     conn: sqlite3.Connection,
     keyword: str,
-    limit: int = 50,
+    limit: int | None = 50,
 ) -> list[sqlite3.Row]:
     return search_craft_entries_by_ingredient(conn, keyword, RECIPE_SOURCE, limit)
 
@@ -751,7 +776,7 @@ def search_recipe_entries_by_ingredient(
 def search_deco_entries_by_ingredient(
     conn: sqlite3.Connection,
     keyword: str,
-    limit: int = 50,
+    limit: int | None = 50,
 ) -> list[sqlite3.Row]:
     return search_craft_entries_by_ingredient(conn, keyword, DECO_SOURCE, limit)
 
@@ -781,8 +806,8 @@ def search_entries_by_initials(
         LEFT JOIN tags t ON t.id = et.tag_id
         WHERE
             ? = ''
-            OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
-            OR (? = 'accessory' AND e.type = 'AccessoryRune')
+            OR (? = 'equipment' AND e.source = 'db.xlsx#Runes')
+            OR (? = 'accessory' AND e.source = 'db.xlsx#AccRune')
             OR (? = 'gathering' AND e.source = 'db.xlsx#Gathering')
             OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
             OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')

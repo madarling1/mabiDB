@@ -11,6 +11,8 @@ from database import DB_PATH, connect, ensure_local_version_files, initialize
 from reporter import build_revision_request, submit_revision_request
 from search import (
     expand_search_terms,
+    compact_search_text,
+    fold_search_text,
     get_attributes,
     initial_search_matches,
     is_initial_search,
@@ -71,6 +73,11 @@ ITEM_NAME_TIER_STYLES = {
 QUIT_COMMANDS = {"2", "/q", "/quit", "q", "quit", "exit"}
 BACK_COMMANDS = {"1", "/back", "back"}
 REVISION_REQUEST_COMMANDS = {"0"}
+PREVIOUS_PAGE_COMMAND = "/이전"
+NEXT_PAGE_COMMAND = "/다음"
+USAGE_COLUMN_SIZE = 50
+USAGE_COLUMN_COUNT = 2
+USAGE_PAGE_SIZE = USAGE_COLUMN_SIZE * USAGE_COLUMN_COUNT
 URL_PATTERN = re.compile(r"https?://\S+")
 DESCRIPTION_BREAK_PATTERN = re.compile(r"(?<!:)//")
 ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
@@ -646,13 +653,15 @@ def barter_matcher(conn, keyword: str):
         return lambda value: bool(value) and initial_search_matches(value, initial_keyword)
 
     terms = expand_search_terms(conn, keyword)
-    compact_terms = ["".join(term.split()) for term in terms]
+    folded_terms = [fold_search_text(term) for term in terms]
+    compact_terms = [compact_search_text(term) for term in terms]
 
     def matches(value: str) -> bool:
         if not value:
             return False
-        compact_value = "".join(value.split())
-        return any(term in value for term in terms) or any(
+        folded_value = fold_search_text(value)
+        compact_value = compact_search_text(value)
+        return any(term in folded_value for term in folded_terms) or any(
             compact_term and compact_term in compact_value
             for compact_term in compact_terms
         )
@@ -1004,21 +1013,59 @@ def print_recipe_result_cards(rows, conn) -> None:
     print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
 
-def print_recipe_usage_results(rows, conn, keyword: str, result_label: str = "제작물") -> None:
-    print_left_box([f"{keyword}{ro_josa(keyword)} 만들 수 있는 {result_label}", f"{len(rows)}건"])
-    for index, row in enumerate(rows, 1):
+def recipe_usage_page(rows, page: int) -> tuple[list, int, bool]:
+    start = max(0, page) * USAGE_PAGE_SIZE
+    page_rows = rows[start : start + USAGE_PAGE_SIZE]
+    return page_rows, start, start + len(page_rows) < len(rows)
+
+
+def print_recipe_usage_columns(rows, conn, start_index: int) -> None:
+    lines = []
+    for index, row in enumerate(rows, start_index + 1):
         attributes = attributes_to_dict(get_attributes(conn, row["id"]))
-        print(f"  {index}. {style_item_name_by_tier(row['name'], attributes.get('등급', ''))}")
+        lines.append(f"{index}. {style_item_name_by_tier(row['name'], attributes.get('등급', ''))}")
+
+    first_column = lines[:USAGE_COLUMN_SIZE]
+    second_column = lines[USAGE_COLUMN_SIZE:]
+    gap = "   "
+    max_width = max((display_width(line) for line in lines), default=0)
+    column_width = min(max_width, max(20, (terminal_width() - display_width(gap)) // USAGE_COLUMN_COUNT))
+    row_count = max(len(first_column), len(second_column))
+    for index in range(row_count):
+        left = first_column[index] if index < len(first_column) else ""
+        right = second_column[index] if index < len(second_column) else ""
+        if right:
+            print(pad_line(left, column_width) + gap + right)
+        else:
+            print(left)
     print()
     print()
 
 
-def print_recipe_results(conn, keyword: str, scope_label: str):
+def print_recipe_usage_results(
+    rows,
+    conn,
+    keyword: str,
+    result_label: str = "제작물",
+    *,
+    page: int = 0,
+) -> tuple[list, bool]:
+    page_rows, start, has_next_page = recipe_usage_page(rows, page)
+    if len(rows) > USAGE_PAGE_SIZE:
+        count_text = f"{len(rows)}건 / {start + 1}-{start + len(page_rows)} 표시"
+    else:
+        count_text = f"{len(rows)}건"
+    print_left_box([f"{keyword}{ro_josa(keyword)} 만들 수 있는 {result_label}", count_text])
+    print_recipe_usage_columns(page_rows, conn, start)
+    return page_rows, has_next_page
+
+
+def print_recipe_results(conn, keyword: str, scope_label: str, usage_page: int = 0):
     direct_rows = search_recipe_entries_by_name(conn, keyword, 20)
     direct_ids = {row["id"] for row in direct_rows}
     usage_rows = [
         row
-        for row in search_recipe_entries_by_ingredient(conn, keyword, 50)
+        for row in search_recipe_entries_by_ingredient(conn, keyword, None)
         if row["id"] not in direct_ids
     ]
     rows = [*direct_rows, *usage_rows]
@@ -1030,24 +1077,27 @@ def print_recipe_results(conn, keyword: str, scope_label: str):
 
     if not rows:
         print_full_box(["검색 결과가 없습니다."])
-        return rows
+        return rows, False
 
-    if direct_rows:
+    if direct_rows and usage_page == 0:
         print_recipe_result_cards(direct_rows, conn)
         if usage_rows:
             print()
             print()
+    visible_rows = direct_rows if usage_page == 0 else []
+    has_next_page = False
     if usage_rows:
-        print_recipe_usage_results(usage_rows, conn, keyword)
-    return rows
+        visible_usage_rows, has_next_page = print_recipe_usage_results(usage_rows, conn, keyword, page=usage_page)
+        visible_rows = [*visible_rows, *visible_usage_rows]
+    return visible_rows, has_next_page
 
 
-def print_deco_results(conn, keyword: str, scope_label: str):
+def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0):
     direct_rows = search_deco_entries_by_name(conn, keyword, 20)
     direct_ids = {row["id"] for row in direct_rows}
     usage_rows = [
         row
-        for row in search_deco_entries_by_ingredient(conn, keyword, 50)
+        for row in search_deco_entries_by_ingredient(conn, keyword, None)
         if row["id"] not in direct_ids
     ]
     rows = [*direct_rows, *usage_rows]
@@ -1059,16 +1109,19 @@ def print_deco_results(conn, keyword: str, scope_label: str):
 
     if not rows:
         print_full_box(["검색 결과가 없습니다."])
-        return rows
+        return rows, False
 
-    if direct_rows:
+    if direct_rows and usage_page == 0:
         print_recipe_result_cards(direct_rows, conn)
         if usage_rows:
             print()
             print()
+    visible_rows = direct_rows if usage_page == 0 else []
+    has_next_page = False
     if usage_rows:
-        print_recipe_usage_results(usage_rows, conn, keyword, "데코")
-    return rows
+        visible_usage_rows, has_next_page = print_recipe_usage_results(usage_rows, conn, keyword, "데코", page=usage_page)
+        visible_rows = [*visible_rows, *visible_usage_rows]
+    return visible_rows, has_next_page
 
 
 def print_update_results(app_update_result, db_update_result) -> None:
@@ -1105,11 +1158,11 @@ def print_left_box(lines: list[str]) -> None:
     print("└" + ("─" * content_width) + "┘")
 
 
-def print_results(conn, keyword: str, scope: str, scope_label: str):
+def print_results(conn, keyword: str, scope: str, scope_label: str, usage_page: int = 0):
     if scope == "recipe":
-        return print_recipe_results(conn, keyword, scope_label)
+        return print_recipe_results(conn, keyword, scope_label, usage_page)
     if scope == "deco":
-        return print_deco_results(conn, keyword, scope_label)
+        return print_deco_results(conn, keyword, scope_label, usage_page)
 
     rows = search_entries(conn, keyword, 20, scope)
 
@@ -1122,16 +1175,16 @@ def print_results(conn, keyword: str, scope: str, scope_label: str):
 
     if not rows:
         print_full_box(["검색 결과가 없습니다."])
-        return rows
+        return rows, False
 
     if scope == "gathering":
         print_gathering_result_cards(rows, conn)
-        return rows
+        return rows, False
     if scope == "barter":
         print_barter_result_cards(rows, conn, keyword)
-        return rows
+        return rows, False
     print_result_cards(rows, conn)
-    return rows
+    return rows, False
 
 
 def recent_result_items(rows, *, limit: int = 5) -> list[dict[str, object]]:
@@ -1203,16 +1256,35 @@ def search_loop(scope: str, scope_label: str) -> None:
                 continue
 
             status_message = ""
+            usage_page = 0
             while True:
-                rows = print_results(conn, keyword, scope, scope_label)
+                rows, has_next_page = print_results(conn, keyword, scope, scope_label, usage_page)
                 if status_message:
                     print(status_message)
                     print()
                     status_message = ""
-                print("Enter:검색  0:수정 요청  1:뒤로가기  2:종료\n")
+                page_commands = []
+                if usage_page > 0:
+                    page_commands.append(f"{PREVIOUS_PAGE_COMMAND}:이전 페이지")
+                if has_next_page:
+                    page_commands.append(f"{NEXT_PAGE_COMMAND}:다음 페이지")
+                page_help = ("  " + "  ".join(page_commands)) if page_commands else ""
+                print(f"Enter:검색{page_help}  0:수정 요청  1:뒤로가기  2:종료\n")
                 next_input = input("검색어 > ").strip()
                 if is_quit_command(next_input):
                     return
+                if next_input == PREVIOUS_PAGE_COMMAND:
+                    if usage_page > 0:
+                        usage_page -= 1
+                    else:
+                        status_message = "이전 페이지가 없습니다."
+                    continue
+                if next_input == NEXT_PAGE_COMMAND:
+                    if has_next_page:
+                        usage_page += 1
+                    else:
+                        status_message = "다음 페이지가 없습니다."
+                    continue
                 if is_revision_request_command(next_input):
                     status_message = prompt_revision_request(keyword, scope, scope_label, rows)
                     continue
@@ -1222,6 +1294,7 @@ def search_loop(scope: str, scope_label: str) -> None:
                 if not next_input:
                     break
                 keyword = next_input
+                usage_page = 0
 
 
 def run_tui() -> None:
