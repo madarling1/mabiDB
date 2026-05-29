@@ -8,6 +8,8 @@ from database import DB_PATH, connect, initialize
 
 EQUIPMENT_RUNE_TYPES = ("WeaponRune", "ArmorRune", "EmblemRune")
 ACCESSORY_RUNE_TYPE = "AccessoryRune"
+RECIPE_SOURCE = "db.xlsx#Recipe"
+DECO_SOURCE = "db.xlsx#Deco"
 CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 JUNGSEONG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
 JONGSEONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
@@ -312,6 +314,8 @@ def search_entries_for_term(
                 OR (? = 'equipment' AND e.type IN ('WeaponRune', 'ArmorRune', 'EmblemRune'))
                 OR (? = 'accessory' AND e.type = 'AccessoryRune')
                 OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
+                OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')
+                OR (? = 'deco' AND e.source = 'db.xlsx#Deco')
         ),
         ranked AS (
             SELECT id, MAX(score) AS score
@@ -362,6 +366,8 @@ def search_entries_for_term(
             term,
             compact_term,
             compact_term,
+            scope,
+            scope,
             scope,
             scope,
             scope,
@@ -500,6 +506,256 @@ def search_gathering_entries_by_name(
     ).fetchall()
 
 
+def fetch_craft_entries(conn: sqlite3.Connection, source: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            0 AS score,
+            COALESCE(rd.class_name, '') AS class_name,
+            rd.skill_slot AS skill_slot,
+            COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+        FROM entries e
+        LEFT JOIN rune_details rd ON rd.entry_id = e.id
+        LEFT JOIN entry_tags et ON et.entry_id = e.id
+        LEFT JOIN tags t ON t.id = et.tag_id
+        WHERE e.source = ?
+        GROUP BY
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            rd.class_name,
+            rd.skill_slot
+        ORDER BY e.id ASC
+        """,
+        (source,),
+    ).fetchall()
+
+
+def fetch_recipe_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return fetch_craft_entries(conn, RECIPE_SOURCE)
+
+
+def fetch_deco_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return fetch_craft_entries(conn, DECO_SOURCE)
+
+
+def search_craft_entries_by_name(
+    conn: sqlite3.Connection,
+    keyword: str,
+    source: str,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    keyword = keyword.strip()
+    if not keyword:
+        return []
+
+    initial_keyword = normalize_search_keyword(keyword)
+    if is_initial_search(initial_keyword):
+        rows = fetch_craft_entries(conn, source)
+        return [row for row in rows if initial_search_matches(row["name"], initial_keyword)][:limit]
+
+    terms = expand_search_terms(conn, keyword)
+    if not terms:
+        return []
+
+    clauses = []
+    params: list[str | int] = []
+    for term in terms:
+        like_term = f"%{term}%"
+        compact_term = f"%{''.join(term.split())}%"
+        clauses.extend(
+            [
+                """
+                SELECT e.id, 100 AS score
+                FROM entries e
+                WHERE e.source = ?
+                  AND e.name = ?
+                """,
+                """
+                SELECT e.id, 80 AS score
+                FROM entries e
+                WHERE e.source = ?
+                  AND e.name LIKE ?
+                """,
+                """
+                SELECT e.id, 75 AS score
+                FROM entries e
+                WHERE e.source = ?
+                  AND REPLACE(e.name, ' ', '') LIKE ?
+                """,
+                """
+                SELECT a.entry_id AS id, 70 AS score
+                FROM aliases a
+                JOIN entries e ON e.id = a.entry_id
+                WHERE e.source = ?
+                  AND a.alias LIKE ?
+                """,
+                """
+                SELECT a.entry_id AS id, 65 AS score
+                FROM aliases a
+                JOIN entries e ON e.id = a.entry_id
+                WHERE e.source = ?
+                  AND REPLACE(a.alias, ' ', '') LIKE ?
+                """,
+            ]
+        )
+        params.extend(
+            [
+                source,
+                term,
+                source,
+                like_term,
+                source,
+                compact_term,
+                source,
+                like_term,
+                source,
+                compact_term,
+            ]
+        )
+
+    matched_sql = "\nUNION ALL\n".join(clauses)
+    return conn.execute(
+        f"""
+        WITH matched AS (
+            {matched_sql}
+        ),
+        ranked AS (
+            SELECT id, MAX(score) AS score
+            FROM matched
+            GROUP BY id
+            ORDER BY score DESC, id ASC
+            LIMIT ?
+        )
+        SELECT
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            r.score,
+            COALESCE(rd.class_name, '') AS class_name,
+            rd.skill_slot AS skill_slot,
+            COALESCE(GROUP_CONCAT(DISTINCT t.name), '') AS tags
+        FROM ranked r
+        JOIN entries e ON e.id = r.id
+        LEFT JOIN rune_details rd ON rd.entry_id = e.id
+        LEFT JOIN entry_tags et ON et.entry_id = e.id
+        LEFT JOIN tags t ON t.id = et.tag_id
+        GROUP BY
+            e.id,
+            e.type,
+            e.name,
+            e.summary,
+            e.description,
+            r.score,
+            rd.class_name,
+            rd.skill_slot
+        ORDER BY r.score DESC, e.name ASC
+        """,
+        (*params, limit),
+    ).fetchall()
+
+
+def search_recipe_entries_by_name(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_name(conn, keyword, RECIPE_SOURCE, limit)
+
+
+def search_deco_entries_by_name(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 20,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_name(conn, keyword, DECO_SOURCE, limit)
+
+
+def recipe_ingredient_parts(recipe: str) -> list[str]:
+    return [part.strip() for part in recipe.split("//") if part.strip()]
+
+
+def recipe_ingredient_name(value: str) -> str:
+    return value.split("×", 1)[0].strip()
+
+
+def recipe_ingredient_match_score(value: str, terms: list[str], initial_keyword: str) -> int:
+    if not value:
+        return 0
+    if is_initial_search(initial_keyword):
+        return 1 if initial_search_matches(value, initial_keyword) else 0
+
+    ingredient_name = recipe_ingredient_name(value)
+    compact_name = "".join(ingredient_name.split())
+    compact_terms = ["".join(term.split()) for term in terms]
+    if any(term == ingredient_name for term in terms) or any(
+        compact_term == compact_name
+        for compact_term in compact_terms
+    ):
+        return 2
+    if any(term in ingredient_name for term in terms) or any(
+        compact_term in compact_name
+        for compact_term in compact_terms
+    ):
+        return 1
+    return 0
+
+
+def search_craft_entries_by_ingredient(
+    conn: sqlite3.Connection,
+    keyword: str,
+    source: str,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    initial_keyword = normalize_search_keyword(keyword)
+    terms = [initial_keyword] if is_initial_search(initial_keyword) else expand_search_terms(conn, keyword)
+    if not terms:
+        return []
+
+    exact_matches: list[sqlite3.Row] = []
+    partial_matches: list[sqlite3.Row] = []
+    for row in fetch_craft_entries(conn, source):
+        score = max(
+            [
+                recipe_ingredient_match_score(part, terms, initial_keyword)
+                for part in recipe_ingredient_parts(row["description"])
+            ],
+            default=0,
+        )
+        if score == 2:
+            exact_matches.append(row)
+        elif score == 1:
+            partial_matches.append(row)
+
+    matched = exact_matches or partial_matches
+    return sorted(matched, key=lambda row: row["name"])[:limit]
+
+
+def search_recipe_entries_by_ingredient(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_ingredient(conn, keyword, RECIPE_SOURCE, limit)
+
+
+def search_deco_entries_by_ingredient(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int = 50,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_ingredient(conn, keyword, DECO_SOURCE, limit)
+
+
 def search_entries_by_initials(
     conn: sqlite3.Connection,
     keyword: str,
@@ -529,6 +785,8 @@ def search_entries_by_initials(
             OR (? = 'accessory' AND e.type = 'AccessoryRune')
             OR (? = 'gathering' AND e.source = 'db.xlsx#Gathering')
             OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
+            OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')
+            OR (? = 'deco' AND e.source = 'db.xlsx#Deco')
         GROUP BY
             e.id,
             e.type,
@@ -539,7 +797,7 @@ def search_entries_by_initials(
             rd.skill_slot
         ORDER BY e.id ASC
         """,
-        (scope, scope, scope, scope, scope),
+        (scope, scope, scope, scope, scope, scope, scope),
     ).fetchall()
     return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
 
@@ -573,6 +831,25 @@ def search_entries(
     limit: int = 10,
     rune_scope: str | None = None,
 ) -> list[sqlite3.Row]:
+    if rune_scope == "recipe":
+        direct_rows = search_recipe_entries_by_name(conn, keyword, limit)
+        direct_ids = {row["id"] for row in direct_rows}
+        usage_rows = [
+            row
+            for row in search_recipe_entries_by_ingredient(conn, keyword, max(limit, 50))
+            if row["id"] not in direct_ids
+        ]
+        return [*direct_rows, *usage_rows][:limit]
+    if rune_scope == "deco":
+        direct_rows = search_deco_entries_by_name(conn, keyword, limit)
+        direct_ids = {row["id"] for row in direct_rows}
+        usage_rows = [
+            row
+            for row in search_deco_entries_by_ingredient(conn, keyword, max(limit, 50))
+            if row["id"] not in direct_ids
+        ]
+        return [*direct_rows, *usage_rows][:limit]
+
     initial_keyword = normalize_search_keyword(keyword)
     if is_initial_search(initial_keyword):
         return search_entries_by_initials(conn, initial_keyword, limit, rune_scope)
@@ -666,8 +943,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10, help="Maximum result count")
     parser.add_argument(
         "--scope",
-        choices=["equipment", "accessory", "gathering", "barter"],
-        help="Search group filter: equipment, accessory, gathering, or barter",
+        choices=["equipment", "accessory", "gathering", "barter", "recipe", "deco"],
+        help="Search group filter: equipment, accessory, gathering, barter, recipe, or deco",
     )
     args = parser.parse_args()
 

@@ -16,6 +16,10 @@ from search import (
     is_initial_search,
     normalize_search_keyword,
     search_entries,
+    search_deco_entries_by_ingredient,
+    search_deco_entries_by_name,
+    search_recipe_entries_by_ingredient,
+    search_recipe_entries_by_name,
 )
 
 
@@ -24,6 +28,8 @@ SCOPES = {
     "2": ("accessory", "장신구"),
     "3": ("gathering", "생활 채집"),
     "4": ("barter", "물물교환"),
+    "5": ("recipe", "제작법"),
+    "6": ("deco", "데코 제작법"),
 }
 
 TYPE_LABELS = {
@@ -33,6 +39,8 @@ TYPE_LABELS = {
     "AccessoryRune": "장신구",
     "Item": "아이템",
     "Barter": "물물교환",
+    "Recipe": "제작법",
+    "Deco": "데코 제작법",
 }
 
 TIER_LABELS = {
@@ -47,11 +55,18 @@ TIER_LABELS = {
 RESET = "\033[0m"
 LIGHT_GREEN = "\033[38;5;114m"
 HIGHLIGHT = "\033[93m"
+GRAY = "\033[90m"
 TIER_STYLES = {
     "전설": "\033[91m",
     "신화": "\033[93m",
     "엘리트": "\033[38;5;135m",
     "에픽": "\033[38;5;199m",
+}
+ITEM_NAME_TIER_STYLES = {
+    "일반": GRAY,
+    "고급": LIGHT_GREEN,
+    "레어": "\033[94m",
+    **TIER_STYLES,
 }
 QUIT_COMMANDS = {"2", "/q", "/quit", "q", "quit", "exit"}
 BACK_COMMANDS = {"1", "/back", "back"}
@@ -202,6 +217,8 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
         print("  2. 장신구 룬")
         print("  3. 생활 채집")
         print("  4. 물물교환")
+        print("  5. 제작법")
+        print("  6. 데코 제작법")
         print()
         if error_message:
             print(error_message)
@@ -210,7 +227,7 @@ def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
         choice = input("번호 입력 > ").strip()
         if choice in SCOPES:
             return SCOPES[choice]
-        error_message = "1, 2, 3, 4 중 하나를 입력하세요."
+        error_message = "1, 2, 3, 4, 5, 6 중 하나를 입력하세요."
 
 
 def search_help_text(scope: str) -> str:
@@ -218,8 +235,12 @@ def search_help_text(scope: str) -> str:
         return "채집물 이름으로 검색 가능합니다. 예) 양털, 마나석 등\n초성검색도 가능합니다. ex) ㄷㄲㅇㅇㅌ > 두꺼운양털\n\n# 황금 재료는 '황금'을 검색해주세요"
     if scope == "barter":
         return "NPC명, 아이템명, 지역으로 검색 가능합니다. 예) 말콤, 상급 양털, 티르코네일\n초성검색도 가능합니다. ex) ㅁㅋ > 말콤"
+    if scope == "recipe":
+        return "아이템명, 재료명으로 검색 가능합니다. 예) 금은매운탕, 상급 양털\n초성검색도 가능합니다. ex) ㅊㄱ > 철괴"
+    if scope == "deco":
+        return "데코명, 재료명으로 검색 가능합니다. 예) 협탁, 목재, 데코 제작 부품\n초성검색도 가능합니다. ex) ㅎㅌ > 협탁"
     if scope == "accessory":
-        return "이름, 클래스, 내용으로 검색 가능합니다. 예) 관통, 기사, 홀리스피어\n초성검색도 가능합니다. ex) ㅅㄹㅂㅋ > 수레바퀴"
+        return "이름, 클래스, 설명으로 검색 가능합니다. 예) 관통, 기사, 홀리스피어\n초성검색도 가능합니다. ex) ㅅㄹㅂㅋ > 수레바퀴"
     return "이름, 내용, 태그, 줄임말로 검색 가능합니다. 예) 쏟불, 무방비, 주피증\n초성검색도 가능합니다. ex) ㅇㄷㅎㅂ > 아득한빛"
 
 
@@ -872,6 +893,184 @@ def print_result_cards(rows, conn) -> None:
     print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
 
+def recipe_card_widths(width: int) -> list[int]:
+    inner_width = width - 3
+    label = display_width("제작 재료") + 2
+    value = inner_width - label
+    return [label, value]
+
+
+def recipe_quantity_text(quantity: str) -> str:
+    if not quantity:
+        return ""
+    return quantity if quantity.endswith("개") else f"{quantity}개"
+
+
+def recipe_output_text(name: str, quantity: str) -> str:
+    quantity_text = quantity.removesuffix("개").strip()
+    return f"{name} ×{quantity_text}" if quantity_text else name
+
+
+def style_item_name_by_tier(name: str, tier: str) -> str:
+    formatted_tier = format_tier(tier)
+    style = ITEM_NAME_TIER_STYLES.get(formatted_tier)
+    return f"{style}{name}{RESET}" if style else name
+
+
+def ro_josa(text: str) -> str:
+    if not text:
+        return "로"
+    last_char = text[-1]
+    code = ord(last_char)
+    if not 0xAC00 <= code <= 0xD7A3:
+        return "로"
+    jongseong_index = (code - 0xAC00) % 28
+    return "로" if jongseong_index in {0, 8} else "으로"
+
+
+def recipe_card_rows(row, attributes: dict[str, str]) -> list[tuple[str, str, str, str]]:
+    recipe = row["description"] or attributes.get("레시피", "")
+    rows = [("name", "이름", style_item_name_by_tier(row["name"], attributes.get("등급", "")), "center")]
+
+    if attributes.get("종류"):
+        rows.append(("type", "종류", attributes["종류"], "center"))
+    if attributes.get("제작대"):
+        rows.append(("workbench", "제작대", attributes["제작대"], "center"))
+    if attributes.get("시간"):
+        rows.append(("time", "제작 시간", attributes["시간"], "center"))
+    if attributes.get("생산량"):
+        rows.append(("output_qty", "제작 결과", recipe_output_text(row["name"], attributes["생산량"]), "center"))
+    if recipe:
+        rows.append(("recipe", "제작 재료", recipe, "left"))
+
+    return rows
+
+
+def recipe_value_lines(key: str, value: str, width: int) -> list[str]:
+    content_width = max(1, width - 2)
+    if key == "recipe":
+        return method_wrapped_lines(value, content_width)
+    return wrap_text(value, content_width)
+
+
+def recipe_card_section_heights(row, attributes: dict[str, str], width: int) -> dict[str, int]:
+    widths = recipe_card_widths(width)
+    return {
+        key: max(1, len(recipe_value_lines(key, value, widths[1])))
+        for key, label, value, value_align in recipe_card_rows(row, attributes)
+    }
+
+
+def render_recipe_result_card(
+    row,
+    attributes: dict[str, str],
+    width: int,
+    section_heights: dict[str, int] | None = None,
+) -> list[str]:
+    widths = recipe_card_widths(width)
+    rows = recipe_card_rows(row, attributes)
+    heights = section_heights or recipe_card_section_heights(row, attributes, width)
+    lines = [hline("┌", "┬", "┐", widths)]
+    for index, (key, label, value, value_align) in enumerate(rows):
+        lines.extend(
+            render_labeled_value_row_fixed(
+                label,
+                recipe_value_lines(key, value, widths[1]),
+                widths,
+                value_align,
+                heights[key],
+            )
+        )
+        if index == len(rows) - 1:
+            lines.append(hline("└", "┴", "┘", widths))
+        else:
+            lines.append(hline("├", "┼", "┤", widths))
+    return lines
+
+
+def print_recipe_result_cards(rows, conn) -> None:
+    width = terminal_width()
+    gap = "   "
+    use_two_columns = width >= 96
+    card_width = (width - display_width(gap)) // 2 if use_two_columns else min(70, width)
+    entries = [
+        (row, attributes_to_dict(get_attributes(conn, row["id"])))
+        for row in rows
+    ]
+    cards = [
+        render_recipe_result_card(row, attributes, card_width)
+        for row, attributes in entries
+    ]
+    print_card_grid(cards, card_width, use_two_columns=use_two_columns)
+
+
+def print_recipe_usage_results(rows, conn, keyword: str, result_label: str = "제작물") -> None:
+    print_left_box([f"{keyword}{ro_josa(keyword)} 만들 수 있는 {result_label}", f"{len(rows)}건"])
+    for index, row in enumerate(rows, 1):
+        attributes = attributes_to_dict(get_attributes(conn, row["id"]))
+        print(f"  {index}. {style_item_name_by_tier(row['name'], attributes.get('등급', ''))}")
+    print()
+    print()
+
+
+def print_recipe_results(conn, keyword: str, scope_label: str):
+    direct_rows = search_recipe_entries_by_name(conn, keyword, 20)
+    direct_ids = {row["id"] for row in direct_rows}
+    usage_rows = [
+        row
+        for row in search_recipe_entries_by_ingredient(conn, keyword, 50)
+        if row["id"] not in direct_ids
+    ]
+    rows = [*direct_rows, *usage_rows]
+
+    print_header("mabiDB", scope_label)
+    print(f"검색어: {keyword}")
+    print(f"결과: 제작법 {len(direct_rows)}건 / 재료 사용 {len(usage_rows)}건")
+    print()
+
+    if not rows:
+        print_full_box(["검색 결과가 없습니다."])
+        return rows
+
+    if direct_rows:
+        print_recipe_result_cards(direct_rows, conn)
+        if usage_rows:
+            print()
+            print()
+    if usage_rows:
+        print_recipe_usage_results(usage_rows, conn, keyword)
+    return rows
+
+
+def print_deco_results(conn, keyword: str, scope_label: str):
+    direct_rows = search_deco_entries_by_name(conn, keyword, 20)
+    direct_ids = {row["id"] for row in direct_rows}
+    usage_rows = [
+        row
+        for row in search_deco_entries_by_ingredient(conn, keyword, 50)
+        if row["id"] not in direct_ids
+    ]
+    rows = [*direct_rows, *usage_rows]
+
+    print_header("mabiDB", scope_label)
+    print(f"검색어: {keyword}")
+    print(f"결과: 데코 제작법 {len(direct_rows)}건 / 재료 사용 {len(usage_rows)}건")
+    print()
+
+    if not rows:
+        print_full_box(["검색 결과가 없습니다."])
+        return rows
+
+    if direct_rows:
+        print_recipe_result_cards(direct_rows, conn)
+        if usage_rows:
+            print()
+            print()
+    if usage_rows:
+        print_recipe_usage_results(usage_rows, conn, keyword, "데코")
+    return rows
+
+
 def print_update_results(app_update_result, db_update_result) -> None:
     lines = ["업데이트 결과"]
     for label, result, fallback in (
@@ -907,6 +1106,11 @@ def print_left_box(lines: list[str]) -> None:
 
 
 def print_results(conn, keyword: str, scope: str, scope_label: str):
+    if scope == "recipe":
+        return print_recipe_results(conn, keyword, scope_label)
+    if scope == "deco":
+        return print_deco_results(conn, keyword, scope_label)
+
     rows = search_entries(conn, keyword, 20, scope)
 
     print_header("mabiDB", scope_label)
@@ -926,7 +1130,6 @@ def print_results(conn, keyword: str, scope: str, scope_label: str):
     if scope == "barter":
         print_barter_result_cards(rows, conn, keyword)
         return rows
-
     print_result_cards(rows, conn)
     return rows
 
