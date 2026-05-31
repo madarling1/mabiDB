@@ -6,6 +6,6 @@
   "deco_assets_version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_asset_version.txt",
   "app_version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/app_version.txt",
   "app_download_url": "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe",
-  "report_webhook_url": "",
+  "report_webhook_url": "https://discord.com/api/webhooks/1505885064301510657/2_K_LL0obzvZ6clTJdWqrQeP40KqZBRh8T5vLfNE021yN0TusoSIjCub0VKnIl77OBU_",
   "timeout_seconds": 15
 }
