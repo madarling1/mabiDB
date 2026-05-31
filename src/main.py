@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import sys
 import unicodedata
+from io import BytesIO
+from pathlib import Path
 
 from app_updater import handle_app_update_args, read_completed_app_update, update_app_from_remote
 from database import DB_PATH, connect, ensure_local_version_files, initialize
+from db_updater import (
+    DECO_ASSET_BLOB_PATH,
+    DECO_ASSET_MANIFEST_PATH,
+    PNG_SIGNATURE,
+    update_deco_assets_from_remote,
+)
 from reporter import build_revision_request, submit_revision_request
 from search import (
     expand_search_terms,
@@ -23,6 +32,11 @@ from search import (
     search_recipe_entries_by_ingredient,
     search_recipe_entries_by_name,
 )
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 
 SCOPES = {
@@ -78,6 +92,16 @@ NEXT_PAGE_COMMAND = "/다음"
 USAGE_COLUMN_SIZE = 50
 USAGE_COLUMN_COUNT = 2
 USAGE_PAGE_SIZE = USAGE_COLUMN_SIZE * USAGE_COLUMN_COUNT
+DECO_SIXEL_WIDTH = 64
+DECO_SIXEL_HEIGHT = 64
+DECO_IMAGE_ROW_HEIGHT = 3
+DECO_IMAGE_CELL_COLUMNS = 8
+DECO_IMAGE_CELL_ROWS = 3
+DECO_RECIPE_ROW_HEIGHT = 4
+TERMINAL_BG_RGB = (12, 12, 12)
+TRANSPARENT_ALPHA_THRESHOLD = 0
+DECO_IMAGE_CARDS_ENABLED = False
+DECO_ASSET_MANIFEST_CACHE: dict[str, dict[str, int]] | None = None
 URL_PATTERN = re.compile(r"https?://\S+")
 DESCRIPTION_BREAK_PATTERN = re.compile(r"(?<!:)//")
 ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
@@ -210,13 +234,17 @@ def print_header(title: str, scope_label: str | None = None) -> None:
     print()
 
 
-def choose_scope(update_result=None, app_update_result=None) -> tuple[str, str]:
-    update_message_pending = update_result is not None or app_update_result is not None
+def choose_scope(update_result=None, app_update_result=None, deco_update_result=None) -> tuple[str, str]:
+    update_message_pending = (
+        update_result is not None
+        or app_update_result is not None
+        or deco_update_result is not None
+    )
     error_message = ""
     while True:
         print_header("mabiDB")
         if update_message_pending:
-            print_update_results(app_update_result, update_result)
+            print_update_results(app_update_result, update_result, deco_update_result)
             update_message_pending = False
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
@@ -909,6 +937,184 @@ def recipe_card_widths(width: int) -> list[int]:
     return [label, value]
 
 
+def detect_deco_image_card_support() -> bool:
+    return bool(os.environ.get("WT_SESSION")) and Image is not None and sys.stdout.isatty()
+
+
+def load_deco_asset_manifest() -> dict[str, dict[str, int]] | None:
+    global DECO_ASSET_MANIFEST_CACHE
+
+    if DECO_ASSET_MANIFEST_CACHE is not None:
+        return DECO_ASSET_MANIFEST_CACHE
+    if not DECO_ASSET_BLOB_PATH.exists() or not DECO_ASSET_MANIFEST_PATH.exists():
+        return None
+
+    try:
+        manifest = json.loads(DECO_ASSET_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+
+    DECO_ASSET_MANIFEST_CACHE = manifest
+    return DECO_ASSET_MANIFEST_CACHE
+
+
+def deco_asset_key(row, attributes: dict[str, str]) -> str | None:
+    deco_type = attributes.get("종류")
+    name = row["name"]
+    if not deco_type or not name:
+        return None
+    return f"{deco_type}/{name}.png"
+
+
+def deco_asset_bytes(row, attributes: dict[str, str]) -> bytes | None:
+    manifest = load_deco_asset_manifest()
+    key = deco_asset_key(row, attributes)
+    if manifest is None or key is None:
+        return None
+
+    entry = manifest.get(key)
+    if not isinstance(entry, dict):
+        return None
+
+    offset = entry.get("offset")
+    size = entry.get("size")
+    if not isinstance(offset, int) or not isinstance(size, int) or offset < 0 or size <= 0:
+        return None
+
+    try:
+        with DECO_ASSET_BLOB_PATH.open("rb") as blob_file:
+            blob_file.seek(offset)
+            data = blob_file.read(size)
+    except OSError:
+        return None
+
+    if len(data) != size or not data.startswith(PNG_SIGNATURE):
+        return None
+    return data
+
+
+def cropped_deco_icon(image: Image.Image) -> Image.Image:
+    alpha = image.getchannel("A")
+    box = alpha.getbbox()
+    if box is None:
+        return image
+
+    left, top, right, bottom = box
+    pad_x = max(2, round((right - left) * 0.08))
+    pad_y = max(2, round((bottom - top) * 0.08))
+    return image.crop(
+        (
+            max(0, left - pad_x),
+            max(0, top - pad_y),
+            min(image.width, right + pad_x),
+            min(image.height, bottom + pad_y),
+        )
+    )
+
+
+def prepare_deco_icon(data: bytes, *, width: int = DECO_SIXEL_WIDTH, height: int = DECO_SIXEL_HEIGHT) -> Image.Image:
+    if Image is None:
+        raise RuntimeError("Pillow is not available")
+
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    image = cropped_deco_icon(Image.open(BytesIO(data)).convert("RGBA"))
+    image.thumbnail((width, height), Image.Resampling.LANCZOS)
+    x = (width - image.width) // 2
+    y = (height - image.height) // 2
+    canvas.alpha_composite(image, (x, y))
+    return canvas
+
+
+def quantize_deco_icon_for_sixel(
+    image: Image.Image,
+    *,
+    colors: int = 64,
+) -> tuple[Image.Image, list[tuple[int, int, int]], Image.Image]:
+    palette_method = Image.Palette.ADAPTIVE if hasattr(Image, "Palette") else Image.ADAPTIVE
+    background = Image.new("RGBA", image.size, (*TERMINAL_BG_RGB, 255))
+    blended = Image.alpha_composite(background, image).convert("RGB")
+    visible = image.getchannel("A").point(lambda alpha: 255 if alpha > TRANSPARENT_ALPHA_THRESHOLD else 0)
+
+    quantized = blended.convert("P", palette=palette_method, colors=colors)
+    raw_palette = quantized.getpalette() or []
+    visible_pixels = visible.load()
+    pixels = quantized.load()
+    used = sorted(
+        {
+            pixels[x, y]
+            for y in range(quantized.height)
+            for x in range(quantized.width)
+            if visible_pixels[x, y]
+        }
+    )
+
+    palette = []
+    for index in used:
+        base = index * 3
+        palette.append((raw_palette[base], raw_palette[base + 1], raw_palette[base + 2]))
+
+    remap = {old: new for new, old in enumerate(used)}
+    for y in range(quantized.height):
+        for x in range(quantized.width):
+            pixels[x, y] = remap[pixels[x, y]] if visible_pixels[x, y] else 0
+    return quantized, palette, visible
+
+
+def sixel_color_value(value: int) -> int:
+    return round(value * 100 / 255)
+
+
+def sixel_rle(chars: list[str]) -> str:
+    encoded = []
+    index = 0
+    while index < len(chars):
+        char = chars[index]
+        count = 1
+        while index + count < len(chars) and chars[index + count] == char:
+            count += 1
+        encoded.append(f"!{count}{char}" if count > 3 else char * count)
+        index += count
+    return "".join(encoded)
+
+
+def deco_image_to_sixel(data: bytes, *, width: int = DECO_SIXEL_WIDTH, height: int = DECO_SIXEL_HEIGHT) -> str:
+    image = prepare_deco_icon(data, width=width, height=height)
+    quantized, palette, visible = quantize_deco_icon_for_sixel(image)
+    pixels = quantized.load()
+    visible_pixels = visible.load()
+
+    parts = ["\033P0;1q", f'"1;1;{quantized.width};{quantized.height}']
+    for index, (red, green, blue) in enumerate(palette):
+        parts.append(
+            f"#{index};2;{sixel_color_value(red)};{sixel_color_value(green)};{sixel_color_value(blue)}"
+        )
+
+    for y in range(0, quantized.height, 6):
+        used_colors = sorted(
+            {
+                pixels[x, yy]
+                for yy in range(y, min(y + 6, quantized.height))
+                for x in range(quantized.width)
+                if visible_pixels[x, yy]
+            }
+        )
+        for color_index in used_colors:
+            chars = []
+            for x in range(quantized.width):
+                bits = 0
+                for bit in range(6):
+                    yy = y + bit
+                    if yy < quantized.height and visible_pixels[x, yy] and pixels[x, yy] == color_index:
+                        bits |= 1 << bit
+                chars.append(chr(63 + bits))
+            parts.append(f"#{color_index}" + sixel_rle(chars) + "$")
+        parts.append("-")
+    parts.append("\033\\")
+    return "".join(parts)
+
+
 def recipe_quantity_text(quantity: str) -> str:
     if not quantity:
         return ""
@@ -1013,6 +1219,135 @@ def print_recipe_result_cards(rows, conn) -> None:
     print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
 
+def render_deco_image_name_row(name: str, widths: list[int], *, height: int = DECO_IMAGE_ROW_HEIGHT) -> list[str]:
+    name_index = height // 2
+    rendered = []
+    for index in range(height):
+        value = name if index == name_index else ""
+        rendered.append("│" + center_cell("", widths[0]) + "│" + center_cell(value, widths[1]) + "│")
+    return rendered
+
+
+def deco_sixel_cursor_offset(widths: list[int]) -> tuple[int, int]:
+    down = 1 + max(0, (DECO_IMAGE_ROW_HEIGHT - DECO_IMAGE_CELL_ROWS + 1) // 2)
+    right = 1 + max(0, (widths[0] - DECO_IMAGE_CELL_COLUMNS + 1) // 2)
+    return down, right
+
+
+def render_deco_image_result_card(row, attributes: dict[str, str], width: int) -> list[str]:
+    widths = recipe_card_widths(width)
+    name = style_item_name_by_tier(row["name"], attributes.get("등급", ""))
+    rows = [entry for entry in recipe_card_rows(row, attributes) if entry[0] != "name"]
+
+    lines = [hline("┌", "┬", "┐", widths)]
+    lines.extend(render_deco_image_name_row(name, widths))
+    if not rows:
+        lines.append(hline("└", "┴", "┘", widths))
+        return lines
+
+    lines.append(hline("├", "┼", "┤", widths))
+    for index, (key, label, value, value_align) in enumerate(rows):
+        value_lines = recipe_value_lines(key, value, widths[1])
+        min_height = DECO_RECIPE_ROW_HEIGHT if key == "recipe" else 1
+        lines.extend(
+            render_labeled_value_row_fixed(
+                label,
+                value_lines,
+                widths,
+                value_align,
+                max(min_height, len(value_lines)),
+            )
+        )
+        if index == len(rows) - 1:
+            lines.append(hline("└", "┴", "┘", widths))
+        else:
+            lines.append(hline("├", "┼", "┤", widths))
+    return lines
+
+
+def maybe_deco_sixel_payload(row, attributes: dict[str, str]) -> str | None:
+    data = deco_asset_bytes(row, attributes)
+    if data is None:
+        return None
+    try:
+        return deco_image_to_sixel(data)
+    except Exception:
+        return None
+
+
+def print_deco_image_card_grid(
+    cards: list[tuple[list[str], str | None]],
+    card_width: int,
+    *,
+    use_two_columns: bool,
+) -> None:
+    gap = "   "
+    step = 2 if use_two_columns else 1
+    widths = recipe_card_widths(card_width)
+    image_down, image_right = deco_sixel_cursor_offset(widths)
+
+    for index in range(0, len(cards), step):
+        left_lines, left_payload = cards[index]
+        right = cards[index + 1] if use_two_columns and index + 1 < len(cards) else None
+        right_lines = right[0] if right is not None else None
+        right_payload = right[1] if right is not None else None
+
+        row_count = max(len(left_lines), len(right_lines) if right_lines is not None else 0)
+        blank = " " * card_width
+        sys.stdout.write("\033[s")
+        for line_index in range(row_count):
+            left_line = left_lines[line_index] if line_index < len(left_lines) else blank
+            if right_lines is None:
+                print(left_line)
+            else:
+                right_line = right_lines[line_index] if line_index < len(right_lines) else blank
+                print(pad_line(left_line, card_width) + gap + right_line)
+
+        for side, payload in enumerate((left_payload, right_payload)):
+            if not payload:
+                continue
+            right_offset = image_right + (card_width + display_width(gap)) * side
+            sys.stdout.write("\033[u")
+            sys.stdout.write(f"\033[{image_down}B\033[{right_offset}C")
+            sys.stdout.write(payload)
+
+        sys.stdout.write("\033[u")
+        sys.stdout.write(f"\033[{row_count}B\r")
+        sys.stdout.flush()
+
+        if index + step < len(cards):
+            print()
+            print()
+
+
+def print_deco_result_cards(rows, conn) -> None:
+    width = terminal_width()
+    gap = "   "
+    use_two_columns = width >= 96
+    card_width = (width - display_width(gap)) // 2 if use_two_columns else min(70, width)
+    entries = [
+        (row, attributes_to_dict(get_attributes(conn, row["id"])))
+        for row in rows
+    ]
+
+    if not DECO_IMAGE_CARDS_ENABLED:
+        cards = [
+            render_recipe_result_card(row, attributes, card_width)
+            for row, attributes in entries
+        ]
+        print_card_grid(cards, card_width, use_two_columns=use_two_columns)
+        return
+
+    cards_with_images = []
+    for row, attributes in entries:
+        payload = maybe_deco_sixel_payload(row, attributes)
+        if payload is None:
+            cards_with_images.append((render_recipe_result_card(row, attributes, card_width), None))
+        else:
+            cards_with_images.append((render_deco_image_result_card(row, attributes, card_width), payload))
+    print_deco_image_card_grid(cards_with_images, card_width, use_two_columns=use_two_columns)
+
+
 def recipe_usage_page(rows, page: int) -> tuple[list, int, bool]:
     start = max(0, page) * USAGE_PAGE_SIZE
     page_rows = rows[start : start + USAGE_PAGE_SIZE]
@@ -1112,7 +1447,7 @@ def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0
         return rows, False
 
     if direct_rows and usage_page == 0:
-        print_recipe_result_cards(direct_rows, conn)
+        print_deco_result_cards(direct_rows, conn)
         if usage_rows:
             print()
             print()
@@ -1124,11 +1459,12 @@ def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0
     return visible_rows, has_next_page
 
 
-def print_update_results(app_update_result, db_update_result) -> None:
+def print_update_results(app_update_result, db_update_result, deco_update_result=None) -> None:
     lines = ["업데이트 결과"]
     for label, result, fallback in (
         ("앱", app_update_result, "기존 앱으로 실행합니다."),
         ("DB", db_update_result, "기존 DB로 실행합니다."),
+        ("데코 이미지", deco_update_result, "기존 텍스트 카드로 실행합니다."),
     ):
         if result is None:
             continue
@@ -1298,6 +1634,8 @@ def search_loop(scope: str, scope_label: str) -> None:
 
 
 def run_tui() -> None:
+    global DECO_IMAGE_CARDS_ENABLED
+
     configure_console()
     ensure_local_version_files()
     completed_app_update = read_completed_app_update()
@@ -1308,8 +1646,10 @@ def run_tui() -> None:
         if app_update_result.status == "restarting":
             return
     update_result = initialize(update_remote=True)
+    deco_update_result = update_deco_assets_from_remote()
+    DECO_IMAGE_CARDS_ENABLED = detect_deco_image_card_support()
     print("앱 시작")
-    scope, scope_label = choose_scope(update_result, app_update_result)
+    scope, scope_label = choose_scope(update_result, app_update_result, deco_update_result)
     search_loop(scope, scope_label)
     print()
     print(f"DB: {DB_PATH}")

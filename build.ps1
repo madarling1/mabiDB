@@ -13,7 +13,7 @@ python -m PyInstaller `
     --onefile `
     --name mabiDB `
     --add-data "resources\schema.sql;resources" `
-    --add-data "data\mobidb.sqlite;data" `
+    --add-data "data\mabidb.sqlite;data" `
     --add-data "data\db_version.txt;data" `
     --add-data "data\app_version.txt;data" `
     --add-data "config\remote_db.json;config" `

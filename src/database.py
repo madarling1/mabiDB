@@ -9,14 +9,14 @@ from db_updater import RemoteDbUpdateResult, update_database_from_remote
 
 
 ROOT_DIR = APP_DIR
-DB_PATH = DATA_DIR / "mobidb.sqlite"
+DB_PATH = DATA_DIR / "mabidb.sqlite"
 SCHEMA_CANDIDATES = (
     APP_DIR / "resources" / "schema.sql",
     APP_DIR / "schema.sql",
     RESOURCE_DIR / "resources" / "schema.sql",
     RESOURCE_DIR / "schema.sql",
 )
-BUNDLED_DB_PATH = RESOURCE_DIR / "data" / "mobidb.sqlite"
+BUNDLED_DB_PATH = RESOURCE_DIR / "data" / "mabidb.sqlite"
 BUNDLED_VERSION_PATH = RESOURCE_DIR / "data" / "db_version.txt"
 BUNDLED_APP_VERSION_PATH = RESOURCE_DIR / "data" / "app_version.txt"
 VERSION_PATH = DATA_DIR / "db_version.txt"
