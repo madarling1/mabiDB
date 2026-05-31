@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from paths import APP_DIR, DATA_DIR, RESOURCE_DIR
-from db_updater import RemoteDbUpdateResult, update_database_from_remote
+from db_updater import RemoteDbUpdateResult, update_database_from_remote, validate_sqlite
 
 
 ROOT_DIR = APP_DIR
@@ -48,6 +48,10 @@ def cleanup_legacy_database_file(db_path: Path = DB_PATH) -> None:
         pass
 
 
+def find_schema_path() -> Path | None:
+    return next((path for path in SCHEMA_CANDIDATES if path.exists()), None)
+
+
 def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> RemoteDbUpdateResult | None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if db_path == DB_PATH and not db_path.exists() and BUNDLED_DB_PATH.exists():
@@ -56,10 +60,13 @@ def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> Remot
     update_result = None
     if update_remote and db_path == DB_PATH:
         update_result = update_database_from_remote(db_path)
-    schema_path = next(path for path in SCHEMA_CANDIDATES if path.exists())
-    schema = schema_path.read_text(encoding="utf-8")
-    with connect(db_path) as conn:
-        conn.executescript(schema)
+    schema_path = find_schema_path()
+    if schema_path is None:
+        validate_sqlite(db_path)
+    else:
+        schema = schema_path.read_text(encoding="utf-8")
+        with connect(db_path) as conn:
+            conn.executescript(schema)
     cleanup_legacy_database_file(db_path)
     return update_result
 

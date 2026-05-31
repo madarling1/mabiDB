@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import unicodedata
 from io import BytesIO
@@ -100,6 +101,8 @@ DECO_IMAGE_CELL_ROWS = 3
 DECO_RECIPE_ROW_HEIGHT = 4
 TERMINAL_BG_RGB = (12, 12, 12)
 TRANSPARENT_ALPHA_THRESHOLD = 0
+WT_RELAUNCH_ENV = "MABIDB_WT_RELAUNCHED"
+PYINSTALLER_RESET_ENV = "PYINSTALLER_RESET_ENVIRONMENT"
 DECO_IMAGE_CARDS_ENABLED = False
 DECO_ASSET_MANIFEST_CACHE: dict[str, dict[str, int]] | None = None
 URL_PATTERN = re.compile(r"https?://\S+")
@@ -941,6 +944,52 @@ def detect_deco_image_card_support() -> bool:
     return bool(os.environ.get("WT_SESSION")) and Image is not None
 
 
+def should_relaunch_in_windows_terminal() -> bool:
+    return (
+        os.name == "nt"
+        and bool(getattr(sys, "frozen", False))
+        and not os.environ.get("WT_SESSION")
+        and not os.environ.get(WT_RELAUNCH_ENV)
+        and shutil.which("wt") is not None
+    )
+
+
+def detach_current_console() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.kernel32.FreeConsole()
+    except Exception:
+        pass
+
+
+def relaunch_in_windows_terminal_if_needed() -> bool:
+    if not should_relaunch_in_windows_terminal():
+        return False
+
+    wt_path = shutil.which("wt")
+    if wt_path is None:
+        return False
+    exe_path = Path(sys.executable).resolve()
+    env = os.environ.copy()
+    env[WT_RELAUNCH_ENV] = "1"
+    env[PYINSTALLER_RESET_ENV] = "1"
+
+    try:
+        subprocess.Popen(
+            [wt_path, "-w", "-1", "new-tab", "--title", "mabiDB", str(exe_path)],
+            cwd=str(exe_path.parent),
+            env=env,
+            close_fds=True,
+        )
+        detach_current_console()
+        return True
+    except OSError:
+        return False
+
+
 def load_deco_asset_manifest() -> dict[str, dict[str, int]] | None:
     global DECO_ASSET_MANIFEST_CACHE
 
@@ -1285,6 +1334,7 @@ def print_deco_image_card_grid(
     step = 2 if use_two_columns else 1
     widths = recipe_card_widths(card_width)
     image_down, image_right = deco_sixel_cursor_offset(widths)
+    image_draw_line = image_down + DECO_IMAGE_CELL_ROWS - 1
 
     for index in range(0, len(cards), step):
         left_lines, left_payload = cards[index]
@@ -1294,25 +1344,24 @@ def print_deco_image_card_grid(
 
         row_count = max(len(left_lines), len(right_lines) if right_lines is not None else 0)
         blank = " " * card_width
-        sys.stdout.write("\033[s")
         for line_index in range(row_count):
             left_line = left_lines[line_index] if line_index < len(left_lines) else blank
             if right_lines is None:
-                print(left_line)
+                sys.stdout.write(left_line + "\n")
             else:
                 right_line = right_lines[line_index] if line_index < len(right_lines) else blank
-                print(pad_line(left_line, card_width) + gap + right_line)
+                sys.stdout.write(pad_line(left_line, card_width) + gap + right_line + "\n")
 
-        for side, payload in enumerate((left_payload, right_payload)):
-            if not payload:
-                continue
-            right_offset = image_right + (card_width + display_width(gap)) * side
-            sys.stdout.write("\033[u")
-            sys.stdout.write(f"\033[{image_down}B\033[{right_offset}C")
-            sys.stdout.write(payload)
-
-        sys.stdout.write("\033[u")
-        sys.stdout.write(f"\033[{row_count}B\r")
+            if line_index == image_draw_line:
+                up = line_index + 1 - image_down
+                for side, payload in enumerate((left_payload, right_payload)):
+                    if not payload:
+                        continue
+                    right_offset = image_right + (card_width + display_width(gap)) * side
+                    sys.stdout.write("\033[s")
+                    sys.stdout.write(f"\033[{up}A\r\033[{right_offset}C")
+                    sys.stdout.write(payload)
+                    sys.stdout.write("\033[u")
         sys.stdout.flush()
 
         if index + step < len(cards):
@@ -1637,6 +1686,8 @@ def run_tui() -> None:
     global DECO_IMAGE_CARDS_ENABLED
 
     configure_console()
+    if relaunch_in_windows_terminal_if_needed():
+        return
     ensure_local_version_files()
     completed_app_update = read_completed_app_update()
     if completed_app_update is not None:
