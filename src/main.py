@@ -938,7 +938,7 @@ def recipe_card_widths(width: int) -> list[int]:
 
 
 def detect_deco_image_card_support() -> bool:
-    return bool(os.environ.get("WT_SESSION")) and Image is not None and sys.stdout.isatty()
+    return bool(os.environ.get("WT_SESSION")) and Image is not None
 
 
 def load_deco_asset_manifest() -> dict[str, dict[str, int]] | None:
