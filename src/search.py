@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sqlite3
 
 from database import DB_PATH, connect, initialize
@@ -10,6 +11,7 @@ ACCESSORY_RUNE_SOURCE = "db.xlsx#AccRune"
 ACCESSORY_RUNE_SHEET = "AccRune"
 RECIPE_SOURCE = "db.xlsx#Recipe"
 DECO_SOURCE = "db.xlsx#Deco"
+INGREDIENT_QUANTITY_SUFFIX = re.compile(r"\s*[×xX]\s*\d+\s*$")
 CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 JUNGSEONG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
 JONGSEONG = ["", "ㄱ", "ㄲ", "ㄳ", "ㄴ", "ㄵ", "ㄶ", "ㄷ", "ㄹ", "ㄺ", "ㄻ", "ㄼ", "ㄽ", "ㄾ", "ㄿ", "ㅀ", "ㅁ", "ㅂ", "ㅄ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"]
@@ -707,7 +709,16 @@ def recipe_ingredient_parts(recipe: str) -> list[str]:
 
 
 def recipe_ingredient_name(value: str) -> str:
-    return value.split("×", 1)[0].strip()
+    return INGREDIENT_QUANTITY_SUFFIX.sub("", value).strip()
+
+
+def expand_ingredient_search_terms(terms: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for term in terms:
+        for value in (term, recipe_ingredient_name(term)):
+            if value and value not in expanded:
+                expanded.append(value)
+    return expanded
 
 
 def recipe_ingredient_match_score(value: str, terms: list[str], initial_keyword: str) -> int:
@@ -742,6 +753,8 @@ def search_craft_entries_by_ingredient(
 ) -> list[sqlite3.Row]:
     initial_keyword = normalize_search_keyword(keyword)
     terms = [initial_keyword] if is_initial_search(initial_keyword) else expand_search_terms(conn, keyword)
+    if not is_initial_search(initial_keyword):
+        terms = expand_ingredient_search_terms(terms)
     if not terms:
         return []
 

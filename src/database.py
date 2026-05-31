@@ -10,6 +10,7 @@ from db_updater import RemoteDbUpdateResult, update_database_from_remote
 
 ROOT_DIR = APP_DIR
 DB_PATH = DATA_DIR / "mabidb.sqlite"
+LEGACY_DB_PATH = DATA_DIR / "mobidb.sqlite"
 SCHEMA_CANDIDATES = (
     APP_DIR / "resources" / "schema.sql",
     APP_DIR / "schema.sql",
@@ -38,6 +39,15 @@ def ensure_local_version_files(db_path: Path = DB_PATH) -> None:
         shutil.copy2(BUNDLED_APP_VERSION_PATH, APP_VERSION_PATH)
 
 
+def cleanup_legacy_database_file(db_path: Path = DB_PATH) -> None:
+    if db_path != DB_PATH or not DB_PATH.exists() or not LEGACY_DB_PATH.exists():
+        return
+    try:
+        LEGACY_DB_PATH.unlink()
+    except OSError:
+        pass
+
+
 def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> RemoteDbUpdateResult | None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if db_path == DB_PATH and not db_path.exists() and BUNDLED_DB_PATH.exists():
@@ -50,6 +60,7 @@ def initialize(db_path: Path = DB_PATH, *, update_remote: bool = False) -> Remot
     schema = schema_path.read_text(encoding="utf-8")
     with connect(db_path) as conn:
         conn.executescript(schema)
+    cleanup_legacy_database_file(db_path)
     return update_result
 
 
