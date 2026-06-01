@@ -1477,7 +1477,7 @@ def print_recipe_results(conn, keyword: str, scope_label: str, usage_page: int =
 
 
 def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0):
-    direct_rows = search_deco_entries_by_name(conn, keyword, 20)
+    direct_rows = search_deco_entries_by_name(conn, keyword, None)
     direct_ids = {row["id"] for row in direct_rows}
     usage_rows = [
         row

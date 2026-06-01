@@ -574,7 +574,7 @@ def search_craft_entries_by_name(
     conn: sqlite3.Connection,
     keyword: str,
     source: str,
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> list[sqlite3.Row]:
     keyword = keyword.strip()
     if not keyword:
@@ -583,7 +583,8 @@ def search_craft_entries_by_name(
     initial_keyword = normalize_search_keyword(keyword)
     if is_initial_search(initial_keyword):
         rows = fetch_craft_entries(conn, source)
-        return [row for row in rows if initial_search_matches(row["name"], initial_keyword)][:limit]
+        matched_rows = [row for row in rows if initial_search_matches(row["name"], initial_keyword)]
+        return matched_rows if limit is None else matched_rows[:limit]
 
     terms = expand_search_terms(conn, keyword)
     if not terms:
@@ -646,6 +647,8 @@ def search_craft_entries_by_name(
         )
 
     matched_sql = "\nUNION ALL\n".join(clauses)
+    limit_sql = "" if limit is None else "LIMIT ?"
+    limit_params = () if limit is None else (limit,)
     return conn.execute(
         f"""
         WITH matched AS (
@@ -656,7 +659,7 @@ def search_craft_entries_by_name(
             FROM matched
             GROUP BY id
             ORDER BY score DESC, id ASC
-            LIMIT ?
+            {limit_sql}
         )
         SELECT
             e.id,
@@ -684,14 +687,14 @@ def search_craft_entries_by_name(
             rd.skill_slot
         ORDER BY r.score DESC, e.name ASC
         """,
-        (*params, limit),
+        (*params, *limit_params),
     ).fetchall()
 
 
 def search_recipe_entries_by_name(
     conn: sqlite3.Connection,
     keyword: str,
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> list[sqlite3.Row]:
     return search_craft_entries_by_name(conn, keyword, RECIPE_SOURCE, limit)
 
@@ -699,7 +702,7 @@ def search_recipe_entries_by_name(
 def search_deco_entries_by_name(
     conn: sqlite3.Connection,
     keyword: str,
-    limit: int = 20,
+    limit: int | None = 20,
 ) -> list[sqlite3.Row]:
     return search_craft_entries_by_name(conn, keyword, DECO_SOURCE, limit)
 
