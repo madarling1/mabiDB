@@ -12,6 +12,7 @@ python -m PyInstaller `
     --clean `
     --onefile `
     --name mabiDB `
+    --icon "resources\mabidb.ico" `
     --add-data "resources\schema.sql;resources" `
     --add-data "data\mabidb.sqlite;data" `
     --add-data "data\db_version.txt;data" `
