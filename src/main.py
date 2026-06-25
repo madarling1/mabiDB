@@ -249,6 +249,8 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
         if update_message_pending:
             print_update_results(app_update_result, update_result, deco_update_result)
             update_message_pending = False
+        print(f"{HIGHLIGHT}시즌2 룬과 신규 생활재료를 업데이트중이에요. 정보가 완벽하지 않을 수 있습니다.\n관련 피드백 주시면 빠르게 반영하겠습니다!\n  ㄴ룬 정보, 물물교환, 가공파트 업데이트 완료{RESET}")
+        print()
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
         print("  1. 무기 / 방어구 / 엠블럼 룬")
@@ -274,7 +276,7 @@ def search_help_text(scope: str) -> str:
     if scope == "barter":
         return "NPC명, 아이템명, 지역으로 검색 가능합니다. 예) 말콤, 상급 양털, 티르코네일\n초성검색도 가능합니다. ex) ㅁㅋ > 말콤"
     if scope == "recipe":
-        return "아이템명, 재료명으로 검색 가능합니다. 예) 금은매운탕, 상급 양털\n초성검색도 가능합니다. ex) ㅊㄱ > 철괴"
+        return "아이템명, 재료명으로 검색 가능합니다. 예) 금은매운탕, 상급 양털\n초성검색도 가능합니다. ex) ㅊㄱ > 철괴\n\n# 가공시간은 6레벨 작업대 + 생활멤버십 (가공시간 -50%) 를 기준으로 작성되었습니다"
     if scope == "deco":
         return "데코명, 재료명으로 검색 가능합니다. 예) 협탁, 목재, 데코 제작 부품\n초성검색도 가능합니다. ex) ㅎㅌ > 협탁"
     if scope == "accessory":
@@ -1201,7 +1203,7 @@ def recipe_card_rows(row, attributes: dict[str, str]) -> list[tuple[str, str, st
     if attributes.get("제작대"):
         rows.append(("workbench", "제작대", attributes["제작대"], "center"))
     if attributes.get("시간"):
-        rows.append(("time", "제작 시간", attributes["시간"], "center"))
+        rows.append(("time", "가공 시간", attributes["시간"], "center"))
     if attributes.get("생산량"):
         rows.append(("output_qty", "제작 결과", recipe_output_text(row["name"], attributes["생산량"]), "center"))
     if recipe:
