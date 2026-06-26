@@ -249,7 +249,7 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
         if update_message_pending:
             print_update_results(app_update_result, update_result, deco_update_result)
             update_message_pending = False
-        print(f"{HIGHLIGHT}시즌2 룬과 신규 생활재료를 업데이트중이에요. 정보가 완벽하지 않을 수 있습니다.\n관련 피드백 주시면 빠르게 반영하겠습니다!\n  ㄴ룬 정보, 물물교환, 가공파트 업데이트 완료{RESET}")
+        print(f"{HIGHLIGHT}시즌2 새 컨텐츠들을 업데이트중이에요. 정보가 완벽하지 않을 수 있습니다.\n신규 채집 관련 정보 제보받아요!\n  ㄴ1,2,4,5 항목 업데이트 완료{RESET}")
         print()
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
