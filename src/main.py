@@ -93,6 +93,8 @@ NEXT_PAGE_COMMAND = "/다음"
 USAGE_COLUMN_SIZE = 50
 USAGE_COLUMN_COUNT = 2
 USAGE_PAGE_SIZE = USAGE_COLUMN_SIZE * USAGE_COLUMN_COUNT
+GOLDEN_MATERIAL_NAME = "황금 재료"
+GOLDEN_MATERIAL_CARD_SCALE = 1.5
 DECO_SIXEL_WIDTH = 64
 DECO_SIXEL_HEIGHT = 64
 DECO_IMAGE_ROW_HEIGHT = 3
@@ -319,6 +321,11 @@ def gathering_card_widths(width: int) -> list[int]:
     return [label, value]
 
 
+def gathering_card_labels(row) -> tuple[str, str]:
+    if row["name"] == GOLDEN_MATERIAL_NAME:
+        return "채집 방법", "재료 목록"
+    return "채집 장소", "채집 방법"
+
 def pad_line(line: str, width: int) -> str:
     return line + (" " * max(0, width - display_width(strip_ansi(line))))
 
@@ -464,12 +471,13 @@ def gathering_card_section_heights(row, attributes: dict[str, str], width: int) 
     content_width = width - 2
     method_lines = method_wrapped_lines(attributes.get("방법", ""), widths[1])
     description_lines = indented_wrapped_lines(row["description"], content_width - 4)
+    location_label, method_label = gathering_card_labels(row)
 
     return {
         "name": len(render_wrapped_row(["이름", row["name"]], widths, ["center", "center"])),
         "tag": len(render_wrapped_row(["분류", attributes.get("태그", "")], widths, ["center", "center"])),
-        "location": len(render_wrapped_row(["채집 장소", attributes.get("위치", "")], widths, ["center", "center"])),
-        "method": len(render_labeled_lines_row_fixed("채집 방법", method_lines, widths, height=1)),
+        "location": len(render_wrapped_row([location_label, attributes.get("위치", "")], widths, ["center", "center"])),
+        "method": len(render_labeled_lines_row_fixed(method_label, method_lines, widths, height=1)),
         "description": len(render_full_width_lines(description_lines, content_width, align="left")),
     }
 
@@ -495,15 +503,16 @@ def render_gathering_result_card(
     description_lines = indented_wrapped_lines(row["description"], content_width - 4)
     heights = section_heights or gathering_card_section_heights(row, attributes, width)
     colored_name = f"{LIGHT_GREEN}{row['name']}{RESET}"
+    location_label, method_label = gathering_card_labels(row)
 
     lines = [hline("┌", "┬", "┐", widths)]
     lines.extend(render_wrapped_row_fixed(["이름", colored_name], widths, ["center", "center"], heights["name"]))
     lines.append(hline("├", "┼", "┤", widths))
     lines.extend(render_wrapped_row_fixed(["분류", attributes.get("태그", "")], widths, ["center", "center"], heights["tag"]))
     lines.append(hline("├", "┼", "┤", widths))
-    lines.extend(render_wrapped_row_fixed(["채집 장소", attributes.get("위치", "")], widths, ["center", "center"], heights["location"]))
+    lines.extend(render_wrapped_row_fixed([location_label, attributes.get("위치", "")], widths, ["center", "center"], heights["location"]))
     lines.append(hline("├", "┼", "┤", widths))
-    lines.extend(render_labeled_lines_row_fixed("채집 방법", method_lines, widths, height=heights["method"]))
+    lines.extend(render_labeled_lines_row_fixed(method_label, method_lines, widths, height=heights["method"]))
     lines.append(hline("├", "┴", "┤", widths))
     lines.extend(
         render_full_width_lines_fixed(
@@ -526,13 +535,45 @@ def print_gathering_result_cards(rows, conn) -> None:
         (row, attributes_to_dict(get_attributes(conn, row["id"])))
         for row in rows
     ]
-    section_heights = max_gathering_card_heights(entries, card_width)
-    cards = [
-        render_gathering_result_card(row, attributes, card_width, section_heights)
+    normal_entries = [
+        (row, attributes)
         for row, attributes in entries
+        if row["name"] != GOLDEN_MATERIAL_NAME
     ]
-    print_card_grid(cards, card_width, use_two_columns=use_two_columns)
+    section_heights = (
+        max_gathering_card_heights(normal_entries, card_width)
+        if normal_entries
+        else None
+    )
 
+    printed_group = False
+
+    def print_group(cards: list[list[str]], width: int, *, two_columns: bool) -> None:
+        nonlocal printed_group
+        if not cards:
+            return
+        if printed_group:
+            print()
+            print()
+        print_card_grid(cards, width, use_two_columns=two_columns)
+        printed_group = True
+
+    pending_cards: list[list[str]] = []
+    for row, attributes in entries:
+        if row["name"] == GOLDEN_MATERIAL_NAME:
+            print_group(pending_cards, card_width, two_columns=use_two_columns)
+            pending_cards = []
+            wide_card_width = min(width, round(card_width * GOLDEN_MATERIAL_CARD_SCALE))
+            print_group(
+                [render_gathering_result_card(row, attributes, wide_card_width)],
+                wide_card_width,
+                two_columns=False,
+            )
+            continue
+
+        pending_cards.append(render_gathering_result_card(row, attributes, card_width, section_heights))
+
+    print_group(pending_cards, card_width, two_columns=use_two_columns)
 
 def padded_display_width(value: str, minimum: int) -> int:
     return max(display_width(value) + 2, minimum)
