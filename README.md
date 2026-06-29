@@ -10,7 +10,8 @@
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 > 💡 보안 경고가 뜨면 **"추가 정보" → "실행"** 을 눌러주세요. (바이러스 아니에요!)<br>
 > 💡 또는 **"점 세개" → "유지" → "삭제버튼 우측 드롭다운 길게 클릭" → "그래도 계속"** 을 눌러주세요.
-<img width="548" height="554" alt="image" src="https://github.com/user-attachments/assets/c8529a44-f91a-4b7a-b152-d62799426cbc" />
+<img width="548" height="554" alt="Highlight26 06 29_221319-00 00 09 932-00 00 18 507-00 00 02 030-00 00 10 592-00 00 02 131-00 00 10 591online-video-cutter com-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/d1b57967-f179-48e2-9c46-cd6a6898682f" />
+
 
 
 실행 후 DB 파일은 `%LOCALAPPDATA%\mabiDB` 경로에 저장됩니다.<br>
