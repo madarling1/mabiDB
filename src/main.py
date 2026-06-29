@@ -246,7 +246,7 @@ def print_header(title: str, scope_label: str | None = None) -> None:
     print()
 
 
-def choose_scope(update_result=None, app_update_result=None, deco_update_result=None, feedback_result=None) -> tuple[str, str]:
+def choose_scope(update_result=None, app_update_result=None, deco_update_result=None, feedback_result=None) -> tuple[str, str, object | None]:
     startup_cards_pending = (
         update_result is not None
         or app_update_result is not None
@@ -282,7 +282,8 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
             feedback_result = fetch_revision_replies()
             continue
         if choice in SCOPES:
-            return SCOPES[choice]
+            scope, scope_label = SCOPES[choice]
+            return scope, scope_label, feedback_result
         error_message = "0, 1, 2, 3, 4, 5, 6 중 하나를 입력하세요."
 
 
@@ -1808,7 +1809,7 @@ def prompt_revision_request(keyword: str, scope: str, scope_label: str, rows) ->
     return "! 수정 요청 전송에 실패했습니다. 잠시 후 다시 시도해주세요."
 
 
-def search_loop(scope: str, scope_label: str) -> None:
+def search_loop(scope: str, scope_label: str, feedback_result=None) -> None:
     with connect() as conn:
         while True:
             print_header("mabiDB", scope_label)
@@ -1819,7 +1820,7 @@ def search_loop(scope: str, scope_label: str) -> None:
             if is_quit_command(keyword):
                 return
             if is_back_command(keyword):
-                new_scope, new_label = choose_scope()
+                new_scope, new_label, feedback_result = choose_scope(feedback_result=feedback_result)
                 scope, scope_label = new_scope, new_label
                 continue
             if not keyword:
@@ -1859,7 +1860,7 @@ def search_loop(scope: str, scope_label: str) -> None:
                     status_message = prompt_revision_request(keyword, scope, scope_label, rows)
                     continue
                 if is_back_command(next_input, allow_b=True):
-                    scope, scope_label = choose_scope()
+                    scope, scope_label, feedback_result = choose_scope(feedback_result=feedback_result)
                     break
                 if not next_input:
                     break
@@ -1886,8 +1887,8 @@ def run_tui() -> None:
     DECO_IMAGE_CARDS_ENABLED = detect_deco_image_card_support()
     feedback_result = fetch_revision_replies()
     print("앱 시작")
-    scope, scope_label = choose_scope(update_result, app_update_result, deco_update_result, feedback_result)
-    search_loop(scope, scope_label)
+    scope, scope_label, feedback_result = choose_scope(update_result, app_update_result, deco_update_result, feedback_result)
+    search_loop(scope, scope_label, feedback_result)
     print()
     print(f"DB: {DB_PATH}")
 
