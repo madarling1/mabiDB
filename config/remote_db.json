@@ -1,12 +1,11 @@
 ﻿{
-  "database_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/mabidb.sqlite",
-  "version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/db_version.txt",
-  "deco_assets_blob_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_assets.blob",
-  "deco_assets_manifest_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_assets_manifest.json",
-  "deco_assets_version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_asset_version.txt",
-  "app_version_url": "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/app_version.txt",
-  "app_download_url": "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe",
-  "report_webhook_url": "https://discord.com/api/webhooks/1520149123162964019/CRLFt-zqUu8NhP-cFjcH3h2BTmeLVWgdrW1nh2JBYS2rKnatyphuPsozS3sxHJPJvjdt",
-  "timeout_seconds": 15
+    "database_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/mabidb.sqlite",
+    "version_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/db_version.txt",
+    "deco_assets_blob_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_assets.blob",
+    "deco_assets_manifest_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_assets_manifest.json",
+    "deco_assets_version_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/deco_asset_version.txt",
+    "app_version_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/app_version.txt",
+    "app_download_url":  "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe",
+    "timeout_seconds":  15,
+    "feedback_url":  "https://host-10-0-0-87.tail1ea174.ts.net/api/feedback"
 }
-

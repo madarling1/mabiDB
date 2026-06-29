@@ -18,7 +18,13 @@ from db_updater import (
     PNG_SIGNATURE,
     update_deco_assets_from_remote,
 )
-from reporter import build_revision_request, submit_revision_request
+from reporter import (
+    build_revision_request,
+    fetch_revision_replies,
+    mark_feedback_replies_seen,
+    submit_revision_request,
+    unread_feedback_reply_count,
+)
 from search import (
     expand_search_terms,
     compact_search_text,
@@ -239,18 +245,19 @@ def print_header(title: str, scope_label: str | None = None) -> None:
     print()
 
 
-def choose_scope(update_result=None, app_update_result=None, deco_update_result=None) -> tuple[str, str]:
-    update_message_pending = (
+def choose_scope(update_result=None, app_update_result=None, deco_update_result=None, feedback_result=None) -> tuple[str, str]:
+    startup_cards_pending = (
         update_result is not None
         or app_update_result is not None
         or deco_update_result is not None
+        or feedback_result is not None
     )
     error_message = ""
     while True:
         print_header("mabiDB")
-        if update_message_pending:
-            print_update_results(app_update_result, update_result, deco_update_result)
-            update_message_pending = False
+        if startup_cards_pending:
+            print_startup_cards(app_update_result, update_result, deco_update_result, feedback_result)
+            startup_cards_pending = False
         print(f"{HIGHLIGHT}시즌2 신규 정보 업데이트 완료!. 오류 제보 환영합니다~ {RESET}")
         print()
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
@@ -267,9 +274,13 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
             print()
             error_message = ""
         choice = input("번호 입력 > ").strip()
+        if choice == "0":
+            show_feedback_replies()
+            feedback_result = fetch_revision_replies()
+            continue
         if choice in SCOPES:
             return SCOPES[choice]
-        error_message = "1, 2, 3, 4, 5, 6 중 하나를 입력하세요."
+        error_message = "0, 1, 2, 3, 4, 5, 6 중 하나를 입력하세요."
 
 
 def search_help_text(scope: str) -> str:
@@ -1551,7 +1562,7 @@ def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0
     return visible_rows, has_next_page
 
 
-def print_update_results(app_update_result, db_update_result, deco_update_result=None) -> None:
+def build_update_result_lines(app_update_result, db_update_result, deco_update_result=None) -> list[str]:
     lines = ["업데이트 결과"]
     for label, result, fallback in (
         ("앱", app_update_result, "기존 앱으로 실행합니다."),
@@ -1570,21 +1581,131 @@ def print_update_results(app_update_result, db_update_result, deco_update_result
 
     while lines and lines[-1] == "":
         lines.pop()
+    return lines
+
+
+def feedback_reply_summary_lines(feedback_result) -> list[str]:
+    lines = ["내 수정 요청 답변"]
+    if feedback_result is None:
+        lines.append("답변 확인 안 함")
+        return lines
+    if feedback_result.status == "ok":
+        total = len(feedback_result.threads)
+        answered = sum(1 for thread in feedback_result.threads if thread.replies)
+        unread = unread_feedback_reply_count(feedback_result.threads)
+        if total == 0:
+            lines.append("답변 내역 없음")
+        elif unread > 0:
+            lines.append(f"새 답변 {unread}건")
+        else:
+            lines.append(f"답변 완료 {answered}건 / 전체 {total}건")
+        lines.append("0: 답변 확인")
+    elif feedback_result.status == "failed":
+        lines.extend(["답변 확인 실패", "0: 다시 확인"])
+    else:
+        lines.append("답변 기능 비활성")
+    return lines
+
+
+def print_update_results(app_update_result, db_update_result, deco_update_result=None) -> None:
+    lines = build_update_result_lines(app_update_result, db_update_result, deco_update_result)
     if len(lines) > 1:
         print_left_box(lines)
         print()
 
 
-def print_left_box(lines: list[str]) -> None:
-    content_width = max(display_width(line) for line in lines) + 2
-    print("┌" + ("─" * content_width) + "┐")
+def render_left_box(lines: list[str], content_width: int | None = None) -> list[str]:
+    if content_width is None:
+        content_width = max(display_width(strip_ansi(line)) for line in lines) + 2
+    rendered = ["┌" + ("─" * content_width) + "┐"]
     for index, line in enumerate(lines):
         if index == 1:
-            print("├" + ("─" * content_width) + "┤")
+            rendered.append("├" + ("─" * content_width) + "┤")
         for wrapped in wrap_text(line, content_width - 2):
-            print("│ " + left_cell(wrapped, content_width - 2) + " │")
-    print("└" + ("─" * content_width) + "┘")
+            rendered.append("│ " + left_cell(wrapped, content_width - 2) + " │")
+    rendered.append("└" + ("─" * content_width) + "┘")
+    return rendered
 
+
+def print_left_box(lines: list[str]) -> None:
+    for line in render_left_box(lines):
+        print(line)
+
+
+def print_box_row(left_lines: list[str], right_lines: list[str]) -> None:
+    gap = "    "
+    left_width = max(display_width(strip_ansi(line)) for line in left_lines)
+    height = max(len(left_lines), len(right_lines))
+    blank_left = " " * left_width
+    for index in range(height):
+        left = left_lines[index] if index < len(left_lines) else blank_left
+        right = right_lines[index] if index < len(right_lines) else ""
+        print(pad_line(left, left_width) + gap + right)
+
+
+def print_startup_cards(app_update_result, db_update_result, deco_update_result, feedback_result) -> None:
+    update_lines = build_update_result_lines(app_update_result, db_update_result, deco_update_result)
+    if len(update_lines) <= 1:
+        update_lines = []
+    reply_lines = feedback_reply_summary_lines(feedback_result) if feedback_result is not None else []
+
+    if not update_lines and not reply_lines:
+        return
+    if update_lines and reply_lines:
+        update_box = render_left_box(update_lines)
+        reply_box = render_left_box(reply_lines)
+        total_width = max(display_width(strip_ansi(line)) for line in update_box)
+        total_width += 4 + max(display_width(strip_ansi(line)) for line in reply_box)
+        if total_width <= terminal_width():
+            print_box_row(update_box, reply_box)
+            print()
+            return
+    if update_lines:
+        print_left_box(update_lines)
+        print()
+    if reply_lines:
+        print_left_box(reply_lines)
+        print()
+
+
+def show_feedback_replies() -> None:
+    result = fetch_revision_replies()
+    print_header("mabiDB", "내 수정 요청 답변")
+    if result.status != "ok":
+        print_full_box(["답변을 불러오지 못했습니다."])
+        if result.message:
+            print(result.message)
+        print()
+        input("Enter를 누르면 돌아갑니다 > ")
+        return
+
+    if not result.threads:
+        print_full_box(["아직 보낸 수정 요청이나 답변이 없습니다."])
+        print()
+        input("Enter를 누르면 돌아갑니다 > ")
+        return
+
+    threads = sorted(result.threads, key=lambda thread: thread.created_at)
+    for thread in threads:
+        lines = [
+            f"요청 ID: {thread.request_id or '-'}",
+            f"상태: {'답변 완료' if thread.replies else '답변 대기'}",
+            f"요청 시각: {thread.created_at or '-'}",
+            f"검색범위: {thread.search_scope or '-'}",
+            f"검색어: {thread.search_query or '-'}",
+            "요청내용:",
+            thread.message or "-",
+        ]
+        if thread.replies:
+            replies = sorted(thread.replies, key=lambda reply: reply.created_at)
+            for reply in replies:
+                lines.extend(["", f"답변 시각: {reply.created_at or '-'}", "답변:", reply.message or "-"])
+        else:
+            lines.extend(["", "답변:", "아직 답변이 없습니다."])
+        print_left_box(lines)
+        print()
+    mark_feedback_replies_seen(result.threads)
+    input("Enter를 누르면 돌아갑니다 > ")
 
 def print_results(conn, keyword: str, scope: str, scope_label: str, usage_page: int = 0):
     if scope == "recipe":
@@ -1662,6 +1783,8 @@ def prompt_revision_request(keyword: str, scope: str, scope_label: str, rows) ->
     )
     result = submit_revision_request(report)
     if result.status == "sent":
+        if result.request_id:
+            return f"✔ 수정 요청이 접수되었습니다. 요청 ID: {result.request_id}"
         return "✔ 수정 요청이 접수되었습니다. 감사합니다."
     return "! 수정 요청 전송에 실패했습니다. 잠시 후 다시 시도해주세요."
 
@@ -1742,8 +1865,9 @@ def run_tui() -> None:
     update_result = initialize(update_remote=True)
     deco_update_result = update_deco_assets_from_remote()
     DECO_IMAGE_CARDS_ENABLED = detect_deco_image_card_support()
+    feedback_result = fetch_revision_replies()
     print("앱 시작")
-    scope, scope_label = choose_scope(update_result, app_update_result, deco_update_result)
+    scope, scope_label = choose_scope(update_result, app_update_result, deco_update_result, feedback_result)
     search_loop(scope, scope_label)
     print()
     print(f"DB: {DB_PATH}")
@@ -1756,3 +1880,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
