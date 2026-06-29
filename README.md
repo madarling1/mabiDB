@@ -9,7 +9,7 @@
 2. 최신 버전의 `mabiDB.exe`를 다운로드하고 `USER_GUIDE.txt`를 확인합니다.
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 > 💡 보안 경고가 뜨면 **"추가 정보" → "실행"** 을 눌러주세요. (바이러스 아니에요!)<br>
-> 💡 또는 **"점 세개" → "유지" → "삭제버튼 우측 드롭다운 길게 클릭" → "그래도 계속"** 을 눌러주세요.
+> 💡 또는 **"점 세개" → "유지" → "삭제버튼 우측 드롭다운 클릭" → "그래도 계속"** 을 눌러주세요.
 <img width="548" height="554" alt="Highlight26 06 29_221319-00 00 09 932-00 00 18 507-00 00 02 030-00 00 10 592-00 00 02 131-00 00 10 591online-video-cutter com-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/d1b57967-f179-48e2-9c46-cd6a6898682f" />
 
 
