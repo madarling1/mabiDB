@@ -10,6 +10,8 @@
 3. 다운로드한 `mabiDB.exe`를 실행합니다.
 > 💡 보안 경고가 뜨면 **"추가 정보" → "실행"** 을 눌러주세요. (바이러스 아니에요!)<br>
 > 💡 또는 **"점 세개" → "유지" → "삭제버튼 우측 드롭다운 길게 클릭" → "그래도 계속"** 을 눌러주세요.
+<img width="548" height="554" alt="image" src="https://github.com/user-attachments/assets/c8529a44-f91a-4b7a-b152-d62799426cbc" />
+
 
 실행 후 DB 파일은 `%LOCALAPPDATA%\mabiDB` 경로에 저장됩니다.<br>
 현재 적용된 앱 및 DB 버전은 `%LOCALAPPDATA%\mabiDB\data\db_version.txt` 에 표시됩니다.
