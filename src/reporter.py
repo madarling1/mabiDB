@@ -327,6 +327,13 @@ def mark_feedback_replies_seen(threads: list[FeedbackThread]) -> None:
     )
 
 
+def clear_feedback_history() -> None:
+    for path in (FEEDBACK_IDENTITY_PATH, FEEDBACK_SEEN_REPLIES_PATH):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
 def send_discord_webhook(webhook_url: str, report: RevisionRequest, timeout_seconds: int) -> None:
     payload = json.dumps(
         {"content": build_discord_content(report)},

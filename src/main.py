@@ -20,6 +20,7 @@ from db_updater import (
 )
 from reporter import (
     build_revision_request,
+    clear_feedback_history,
     fetch_revision_replies,
     mark_feedback_replies_seen,
     submit_revision_request,
@@ -258,6 +259,8 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
         if startup_cards_pending:
             print_startup_cards(app_update_result, update_result, deco_update_result, feedback_result)
             startup_cards_pending = False
+        elif feedback_result is not None:
+            print_startup_cards(None, None, None, feedback_result)
         print(f"{HIGHLIGHT}시즌2 신규 정보 업데이트 완료!. 오류 제보 환영합니다~ {RESET}")
         print()
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
@@ -1668,6 +1671,22 @@ def print_startup_cards(app_update_result, db_update_result, deco_update_result,
         print()
 
 
+def prompt_feedback_history_action() -> None:
+    choice = input("Enter를 누르면 돌아갑니다 / D 입력: 기록 지우기 > ").strip().casefold()
+    if choice != "d":
+        return
+
+    confirm = input("이 앱에서 이전 요청/답변 기록을 숨깁니다. 지우려면 DELETE 입력 > ").strip()
+    if confirm != "DELETE":
+        print("기록 지우기를 취소했습니다.")
+    else:
+        try:
+            clear_feedback_history()
+            print("기록을 지웠습니다. 이후 내 답변은 새 기록으로 시작합니다.")
+        except OSError as exc:
+            print(f"기록 지우기 실패: {exc}")
+    input("Enter를 누르면 돌아갑니다 > ")
+
 def show_feedback_replies() -> None:
     result = fetch_revision_replies()
     print_header("mabiDB", "내 수정 요청 답변")
@@ -1676,13 +1695,13 @@ def show_feedback_replies() -> None:
         if result.message:
             print(result.message)
         print()
-        input("Enter를 누르면 돌아갑니다 > ")
+        prompt_feedback_history_action()
         return
 
     if not result.threads:
         print_full_box(["아직 보낸 수정 요청이나 답변이 없습니다."])
         print()
-        input("Enter를 누르면 돌아갑니다 > ")
+        prompt_feedback_history_action()
         return
 
     threads = sorted(result.threads, key=lambda thread: thread.created_at)
@@ -1705,7 +1724,7 @@ def show_feedback_replies() -> None:
         print_left_box(lines)
         print()
     mark_feedback_replies_seen(result.threads)
-    input("Enter를 누르면 돌아갑니다 > ")
+    prompt_feedback_history_action()
 
 def print_results(conn, keyword: str, scope: str, scope_label: str, usage_page: int = 0):
     if scope == "recipe":
