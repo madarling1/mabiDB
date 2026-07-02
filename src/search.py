@@ -70,7 +70,7 @@ def english_to_korean(text: str) -> str:
     index = 0
     while index < len(jamo):
         current = jamo[index]
-        if current not in CONSONANT_SET or index + 1 >= len(jamo) or jamo[index + 1] not in VOWEL_SET:
+        if current not in CHOSEONG_SET or index + 1 >= len(jamo) or jamo[index + 1] not in VOWEL_SET:
             result.append(current)
             index += 1
             continue
