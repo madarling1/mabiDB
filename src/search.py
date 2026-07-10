@@ -11,6 +11,7 @@ ACCESSORY_RUNE_SOURCE = "db.xlsx#AccRune"
 ACCESSORY_RUNE_SHEET = "AccRune"
 RECIPE_SOURCE = "db.xlsx#Recipe"
 DECO_SOURCE = "db.xlsx#Deco"
+RESIST_SOURCE = "db.xlsx#Resist"
 INGREDIENT_QUANTITY_SUFFIX = re.compile(r"\s*[×xX]\s*\d+\s*$")
 CHOSEONG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 JUNGSEONG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
@@ -340,6 +341,7 @@ def search_entries_for_term(
                 OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
                 OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')
                 OR (? = 'deco' AND e.source = 'db.xlsx#Deco')
+                OR (? = 'resist' AND e.source = 'db.xlsx#Resist')
         ),
         ranked AS (
             SELECT id, MAX(score) AS score
@@ -390,6 +392,7 @@ def search_entries_for_term(
             term,
             compact_term,
             compact_term,
+            scope,
             scope,
             scope,
             scope,
@@ -570,6 +573,10 @@ def fetch_deco_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return fetch_craft_entries(conn, DECO_SOURCE)
 
 
+def fetch_resist_entries(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return fetch_craft_entries(conn, RESIST_SOURCE)
+
+
 def search_craft_entries_by_name(
     conn: sqlite3.Connection,
     keyword: str,
@@ -707,6 +714,14 @@ def search_deco_entries_by_name(
     return search_craft_entries_by_name(conn, keyword, DECO_SOURCE, limit)
 
 
+def search_resist_entries_by_name(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int | None = 20,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_name(conn, keyword, RESIST_SOURCE, limit)
+
+
 def recipe_ingredient_parts(recipe: str) -> list[str]:
     return [part.strip() for part in recipe.split("//") if part.strip()]
 
@@ -797,6 +812,14 @@ def search_deco_entries_by_ingredient(
     return search_craft_entries_by_ingredient(conn, keyword, DECO_SOURCE, limit)
 
 
+def search_resist_entries_by_ingredient(
+    conn: sqlite3.Connection,
+    keyword: str,
+    limit: int | None = 50,
+) -> list[sqlite3.Row]:
+    return search_craft_entries_by_ingredient(conn, keyword, RESIST_SOURCE, limit)
+
+
 def search_entries_by_initials(
     conn: sqlite3.Connection,
     keyword: str,
@@ -828,6 +851,7 @@ def search_entries_by_initials(
             OR (? = 'barter' AND e.source = 'db.xlsx#Barter')
             OR (? = 'recipe' AND e.source = 'db.xlsx#Recipe')
             OR (? = 'deco' AND e.source = 'db.xlsx#Deco')
+            OR (? = 'resist' AND e.source = 'db.xlsx#Resist')
         GROUP BY
             e.id,
             e.type,
@@ -838,7 +862,7 @@ def search_entries_by_initials(
             rd.skill_slot
         ORDER BY e.id ASC
         """,
-        (scope, scope, scope, scope, scope, scope, scope),
+        (scope, scope, scope, scope, scope, scope, scope, scope),
     ).fetchall()
     return [row for row in rows if initial_search_matches(row["name"], keyword)][:limit]
 
@@ -887,6 +911,15 @@ def search_entries(
         usage_rows = [
             row
             for row in search_deco_entries_by_ingredient(conn, keyword, max(limit, 50))
+            if row["id"] not in direct_ids
+        ]
+        return [*direct_rows, *usage_rows][:limit]
+    if rune_scope == "resist":
+        direct_rows = search_resist_entries_by_name(conn, keyword, limit)
+        direct_ids = {row["id"] for row in direct_rows}
+        usage_rows = [
+            row
+            for row in search_resist_entries_by_ingredient(conn, keyword, max(limit, 50))
             if row["id"] not in direct_ids
         ]
         return [*direct_rows, *usage_rows][:limit]
@@ -984,8 +1017,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=10, help="Maximum result count")
     parser.add_argument(
         "--scope",
-        choices=["equipment", "accessory", "gathering", "barter", "recipe", "deco"],
-        help="Search group filter: equipment, accessory, gathering, barter, recipe, or deco",
+        choices=["equipment", "accessory", "gathering", "barter", "recipe", "deco", "resist"],
+        help="Search group filter: equipment, accessory, gathering, barter, recipe, deco, or resist",
     )
     args = parser.parse_args()
 

@@ -18,6 +18,7 @@ from db_updater import (
     PNG_SIGNATURE,
     update_deco_assets_from_remote,
 )
+from market_prices import MaterialPrice, ResistMarketPrices, fetch_resist_market_prices
 from reporter import (
     build_revision_request,
     clear_feedback_history,
@@ -39,6 +40,8 @@ from search import (
     search_deco_entries_by_name,
     search_recipe_entries_by_ingredient,
     search_recipe_entries_by_name,
+    search_resist_entries_by_ingredient,
+    search_resist_entries_by_name,
 )
 
 try:
@@ -54,6 +57,7 @@ SCOPES = {
     "4": ("barter", "물물교환"),
     "5": ("recipe", "제작법"),
     "6": ("deco", "데코 제작법"),
+    "7": ("resist", "마도저항"),
 }
 
 TYPE_LABELS = {
@@ -65,6 +69,7 @@ TYPE_LABELS = {
     "Barter": "물물교환",
     "Recipe": "제작법",
     "Deco": "데코 제작법",
+    "Resist": "마도저항",
 }
 
 TIER_LABELS = {
@@ -117,6 +122,7 @@ DECO_ASSET_MANIFEST_CACHE: dict[str, dict[str, int]] | None = None
 URL_PATTERN = re.compile(r"https?://\S+")
 DESCRIPTION_BREAK_PATTERN = re.compile(r"(?<!:)//")
 ANSI_PATTERN = re.compile(r"\033\[[0-9;]*m")
+RECIPE_QUANTITY_PATTERN = re.compile(r"^(?P<name>.*?)\s*[×xX]\s*(?P<quantity>\d+)\s*$")
 
 
 def configure_console() -> None:
@@ -227,6 +233,15 @@ def hline(left: str, middle: str, right: str, widths: list[int]) -> str:
     return left + middle.join("─" * width for width in widths) + right
 
 
+def hline_with_joins(left: str, joins: list[str], right: str, widths: list[int]) -> str:
+    if len(joins) != len(widths) - 1:
+        raise ValueError("join count must be one less than width count")
+    result = left + ("─" * widths[0])
+    for join, width in zip(joins, widths[1:]):
+        result += join + ("─" * width)
+    return result + right
+
+
 def print_full_box(lines: list[str]) -> None:
     width = terminal_width()
     content_width = width - 2
@@ -271,6 +286,7 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
         print("  4. 물물교환")
         print("  5. 제작법")
         print("  6. 데코 제작법")
+        print("  7. 마도저항")
         print()
         if error_message:
             print(error_message)
@@ -284,7 +300,7 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
         if choice in SCOPES:
             scope, scope_label = SCOPES[choice]
             return scope, scope_label, feedback_result
-        error_message = "0, 1, 2, 3, 4, 5, 6 중 하나를 입력하세요."
+        error_message = "0, 1, 2, 3, 4, 5, 6, 7 중 하나를 입력하세요."
 
 
 def search_help_text(scope: str) -> str:
@@ -296,6 +312,8 @@ def search_help_text(scope: str) -> str:
         return "아이템명, 재료명으로 검색 가능합니다. 예) 금은매운탕, 상급 양털\n초성검색도 가능합니다. ex) ㅊㄱ > 철괴\n\n# 가공시간은 6레벨 작업대 + 생활멤버십 (가공시간 -50%) 를 기준으로 작성되었습니다"
     if scope == "deco":
         return "데코명, 재료명으로 검색 가능합니다. 예) 협탁, 목재, 데코 제작 부품\n초성검색도 가능합니다. ex) ㅎㅌ > 협탁"
+    if scope == "resist":
+        return "잔영, 해연, 클래스명, 부위명 등으로 검색 가능합니다. 예) 잔영, 사제, 천옷, 반지 등등\n초성검색도 가능합니다. ex) ㅇㅈㅅㄷ > 엣지소드\n잔영과 해연 장비의 제작 성공률 100%는 24레벨입니다. 각 제작대 6레벨이 필요합니다."
     if scope == "accessory":
         return "이름, 클래스, 설명으로 검색 가능합니다. 예) 관통, 기사, 홀리스피어\n초성검색도 가능합니다. ex) ㅅㄹㅂㅋ > 수레바퀴"
     return "이름, 내용, 태그, 줄임말로 검색 가능합니다. 예) 쏟불, 무방비, 주피증\n초성검색도 가능합니다. ex) ㅃㅇㅈ > 뼈인장\n전체 룬 목록을 보려면 룬 종류를 입력하세요. ex) 방어구룬, 무기룬"
@@ -1250,6 +1268,147 @@ def ro_josa(text: str) -> str:
     return "로" if jongseong_index in {0, 8} else "으로"
 
 
+def format_deca(value: int) -> str:
+    return f"{value:,}"
+
+
+def parse_recipe_material_part(raw: str) -> tuple[str, str, int | None]:
+    value = raw.strip()
+    match = RECIPE_QUANTITY_PATTERN.match(value)
+    if not match:
+        return value, value, None
+    return value, match.group("name").strip(), int(match.group("quantity"))
+
+
+def recipe_material_parts(recipe: str) -> list[tuple[str, str, int | None]]:
+    return [
+        parse_recipe_material_part(part)
+        for part in recipe.split("//")
+        if part.strip()
+    ]
+
+
+def market_price_for_material(name: str, prices: ResistMarketPrices) -> MaterialPrice | None:
+    price = prices.items.get(name)
+    if price is None or price.status != "exact":
+        return None
+    return price
+
+
+def material_market_note(name: str, quantity: int | None, prices: ResistMarketPrices) -> str:
+    price = market_price_for_material(name, prices)
+    if price is None:
+        return ""
+    if price.sold_out or price.total_count <= 0:
+        return "품절"
+    if price.min_price is None:
+        return ""
+    if quantity is None:
+        return f"{format_deca(price.min_price)} D"
+    return f"{format_deca(price.min_price)} D  총 {format_deca(price.min_price * quantity)}"
+
+
+def material_market_total(name: str, quantity: int | None, prices: ResistMarketPrices) -> int | None:
+    price = market_price_for_material(name, prices)
+    if price is None or quantity is None:
+        return None
+    if price.sold_out or price.total_count <= 0 or price.min_price is None:
+        return None
+    return price.min_price * quantity
+
+
+def recipe_market_total(recipe: str, prices: ResistMarketPrices) -> int:
+    return sum(
+        total
+        for _raw, name, quantity in recipe_material_parts(recipe)
+        for total in [material_market_total(name, quantity, prices)]
+        if total is not None
+    )
+
+
+def aligned_market_material_lines(recipe: str, prices: ResistMarketPrices, width: int, right_padding: int = 8) -> list[str]:
+    rows = [
+        (f"· {raw}", material_market_note(name, quantity, prices))
+        for raw, name, quantity in recipe_material_parts(recipe)
+    ]
+    if not rows:
+        return [""]
+    if not any(note for _material, note in rows):
+        return method_wrapped_lines(recipe, width)
+
+    right_padding = max(0, min(right_padding, max(0, width - 12)))
+    usable_width = max(1, width - right_padding)
+    max_note_width = max(display_width(note) for _material, note in rows)
+    note_width = min(max_note_width, max(1, usable_width // 2))
+    gap = 2
+    material_width = max(8, usable_width - gap - note_width)
+
+    lines = []
+    for material, note in rows:
+        wrapped_material = wrap_text(material, material_width)
+        first = left_cell(wrapped_material[0], material_width) + (" " * gap) + left_cell(note, note_width)
+        lines.append(left_cell(first, usable_width) + (" " * right_padding))
+        for continuation in wrapped_material[1:]:
+            lines.append(left_cell(continuation, usable_width) + (" " * right_padding))
+    return lines
+
+
+def resist_market_recipe_value_lines(key: str, value: str, width: int, prices: ResistMarketPrices) -> list[str]:
+    content_width = max(1, width - 2)
+    if key == "recipe":
+        return aligned_market_material_lines(value, prices, content_width)
+    return wrap_text(value, content_width)
+
+
+def resist_market_card_section_heights(row, attributes: dict[str, str], width: int, prices: ResistMarketPrices) -> dict[str, int]:
+    widths = recipe_card_widths(width)
+    return {
+        key: max(1, len(resist_market_recipe_value_lines(key, value, widths[1], prices)))
+        for key, label, value, value_align in recipe_card_rows(row, attributes)
+    }
+
+
+def market_cost_text(total: int) -> str:
+    return f"총 {format_deca(total)} D (품절 제외)"
+
+
+def market_basis_timestamp(prices: ResistMarketPrices) -> str:
+    return prices.updated_at or prices.cache_updated_at
+
+
+def market_basis_value_widths(value_width: int, timestamp: str, cost_text: str) -> list[int]:
+    available = max(1, value_width - 1)
+    left = min(max(display_width(timestamp) + 2, available // 2), max(1, available - 1))
+    right = available - left
+    min_right = display_width(cost_text) + 2
+    if right < min_right and available > min_right:
+        right = min(available - 1, min_right)
+        left = available - right
+    return [left, right]
+
+
+def render_labeled_split_value_row(label: str, left_value: str, right_value: str, widths: list[int]) -> tuple[list[str], list[int]]:
+    value_widths = market_basis_value_widths(widths[1], left_value, right_value)
+    left_lines = wrap_text(left_value, max(1, value_widths[0] - 2))
+    right_lines = wrap_text(right_value, max(1, value_widths[1] - 2))
+    height = max(len(left_lines), len(right_lines), 1)
+    left_lines += [""] * (height - len(left_lines))
+    right_lines += [""] * (height - len(right_lines))
+    label_index = (height - 1) // 2
+
+    rendered = []
+    for index in range(height):
+        rendered.append(
+            "│"
+            + center_cell(label if index == label_index else "", widths[0])
+            + "│"
+            + center_cell(left_lines[index], value_widths[0])
+            + "│"
+            + center_cell(right_lines[index], value_widths[1])
+            + "│"
+        )
+    return rendered, value_widths
+
 def recipe_card_rows(row, attributes: dict[str, str]) -> list[tuple[str, str, str, str]]:
     recipe = row["description"] or attributes.get("레시피", "")
     rows = [("name", "이름", style_item_name_by_tier(row["name"], attributes.get("등급", "")), "center")]
@@ -1325,6 +1484,61 @@ def print_recipe_result_cards(rows, conn) -> None:
     ]
     print_card_grid(cards, card_width, use_two_columns=use_two_columns)
 
+
+def render_resist_market_result_card(
+    row,
+    attributes: dict[str, str],
+    width: int,
+    prices: ResistMarketPrices,
+) -> list[str]:
+    if not prices.ok:
+        return render_recipe_result_card(row, attributes, width)
+
+    widths = recipe_card_widths(width)
+    rows = recipe_card_rows(row, attributes)
+    heights = resist_market_card_section_heights(row, attributes, width, prices)
+    timestamp = market_basis_timestamp(prices)
+    recipe = row["description"] or attributes.get("레시피", "")
+    show_basis = bool(timestamp and recipe)
+    total = recipe_market_total(recipe, prices)
+    cost_text = market_cost_text(total)
+
+    lines = [hline("┌", "┬", "┐", widths)]
+    for index, (key, label, value, value_align) in enumerate(rows):
+        lines.extend(
+            render_labeled_value_row_fixed(
+                label,
+                resist_market_recipe_value_lines(key, value, widths[1], prices),
+                widths,
+                value_align,
+                heights[key],
+            )
+        )
+        if index == len(rows) - 1:
+            if show_basis:
+                basis_widths = market_basis_value_widths(widths[1], timestamp, cost_text)
+                lines.append(hline_with_joins("├", ["┼", "┬"], "┤", [widths[0], *basis_widths]))
+                basis_lines, basis_widths = render_labeled_split_value_row("시세 기준", timestamp, cost_text, widths)
+                lines.extend(basis_lines)
+                lines.append(hline_with_joins("└", ["┴", "┴"], "┘", [widths[0], *basis_widths]))
+            else:
+                lines.append(hline("└", "┴", "┘", widths))
+        else:
+            lines.append(hline("├", "┼", "┤", widths))
+    return lines
+
+
+def print_resist_result_cards(rows, conn, prices: ResistMarketPrices) -> None:
+    card_width = min(70, terminal_width())
+    entries = [
+        (row, attributes_to_dict(get_attributes(conn, row["id"])))
+        for row in rows
+    ]
+    cards = [
+        render_resist_market_result_card(row, attributes, card_width, prices)
+        for row, attributes in entries
+    ]
+    print_card_grid(cards, card_width, use_two_columns=False)
 
 def render_deco_image_name_row(name: str, widths: list[int], *, height: int = DECO_IMAGE_ROW_HEIGHT) -> list[str]:
     name_index = height // 2
@@ -1534,6 +1748,38 @@ def print_recipe_results(conn, keyword: str, scope_label: str, usage_page: int =
     return visible_rows, has_next_page
 
 
+def print_resist_results(conn, keyword: str, scope_label: str, usage_page: int = 0):
+    direct_rows = search_resist_entries_by_name(conn, keyword, 20)
+    direct_ids = {row["id"] for row in direct_rows}
+    usage_rows = [
+        row
+        for row in search_resist_entries_by_ingredient(conn, keyword, None)
+        if row["id"] not in direct_ids
+    ]
+    rows = [*direct_rows, *usage_rows]
+
+    print_header("mabiDB", scope_label)
+    print(f"검색어: {keyword}")
+    print(f"결과: 마도저항 {len(direct_rows)}건 / 재료 사용 {len(usage_rows)}건")
+    print()
+
+    if not rows:
+        print_full_box(["검색 결과가 없습니다."])
+        return rows, False
+
+    if direct_rows and usage_page == 0:
+        print_resist_result_cards(direct_rows, conn, fetch_resist_market_prices())
+        if usage_rows:
+            print()
+            print()
+    visible_rows = direct_rows if usage_page == 0 else []
+    has_next_page = False
+    if usage_rows:
+        visible_usage_rows, has_next_page = print_recipe_usage_results(usage_rows, conn, keyword, "마도저항", page=usage_page)
+        visible_rows = [*visible_rows, *visible_usage_rows]
+    return visible_rows, has_next_page
+
+
 def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0):
     direct_rows = search_deco_entries_by_name(conn, keyword, None)
     direct_ids = {row["id"] for row in direct_rows}
@@ -1732,6 +1978,8 @@ def print_results(conn, keyword: str, scope: str, scope_label: str, usage_page: 
         return print_recipe_results(conn, keyword, scope_label, usage_page)
     if scope == "deco":
         return print_deco_results(conn, keyword, scope_label, usage_page)
+    if scope == "resist":
+        return print_resist_results(conn, keyword, scope_label, usage_page)
 
     rows = search_entries(conn, keyword, 20, scope)
 
