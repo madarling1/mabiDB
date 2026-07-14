@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -17,6 +18,7 @@ DB_VERSION_PATH = DATA_DIR / "db_version.txt"
 APP_VERSION_PATH = DATA_DIR / "app_version.txt"
 FEEDBACK_IDENTITY_PATH = USER_DATA_DIR / "feedback_identity.json"
 FEEDBACK_SEEN_REPLIES_PATH = USER_DATA_DIR / "feedback_seen_replies.json"
+FEEDBACK_HIDDEN_REQUESTS_PATH = USER_DATA_DIR / "feedback_hidden_requests.json"
 REQUEST_HEADERS = {"User-Agent": "mabiDB"}
 DISCORD_CONTENT_LIMIT = 1900
 KST = timezone(timedelta(hours=9))
@@ -124,22 +126,40 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
 
-def feedback_reply_token() -> str:
+def feedback_identity() -> dict[str, str]:
+    values = {}
     try:
-        values = json.loads(FEEDBACK_IDENTITY_PATH.read_text(encoding="utf-8"))
-        token = str(values.get("replyToken", "")).strip()
-        if token:
-            return token
+        raw_values = json.loads(FEEDBACK_IDENTITY_PATH.read_text(encoding="utf-8"))
+        if isinstance(raw_values, dict):
+            values = raw_values
     except (OSError, json.JSONDecodeError):
         pass
 
-    token = secrets.token_urlsafe(32)
-    FEEDBACK_IDENTITY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FEEDBACK_IDENTITY_PATH.write_text(
-        json.dumps({"replyToken": token}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    return token
+    token = str(values.get("replyToken", "")).strip()
+    user_id = str(values.get("userId", "")).strip()
+    changed = False
+    if not token:
+        token = secrets.token_urlsafe(32)
+        changed = True
+    if not user_id:
+        user_id = "pc-" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:12]
+        changed = True
+
+    if changed or values.get("replyToken") != token or values.get("userId") != user_id:
+        FEEDBACK_IDENTITY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        next_values = dict(values)
+        next_values["replyToken"] = token
+        next_values["userId"] = user_id
+        FEEDBACK_IDENTITY_PATH.write_text(
+            json.dumps(next_values, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    return {"replyToken": token, "userId": user_id}
+
+
+def feedback_reply_token() -> str:
+    return feedback_identity()["replyToken"]
+
 
 
 def build_revision_request(
@@ -179,6 +199,8 @@ def submit_revision_request(report: RevisionRequest) -> ReportResult:
 
 
 def send_feedback_request(feedback_url: str, report: RevisionRequest, timeout_seconds: int) -> str:
+    identity = feedback_identity()
+    reply_token = identity["replyToken"]
     recent_results = []
     for item in report.recent_results:
         recent_results.append(
@@ -191,7 +213,8 @@ def send_feedback_request(feedback_url: str, report: RevisionRequest, timeout_se
     payload = json.dumps(
         {
             "platform": "desktop",
-            "replyToken": feedback_reply_token(),
+            "replyToken": reply_token,
+            "userId": identity["userId"],
             "message": report.message,
             "searchScope": report.scope_label,
             "searchScopeKey": report.scope,
@@ -254,7 +277,7 @@ def fetch_revision_replies() -> FeedbackThreadsResult:
         data = json.loads(body) if body.strip() else {}
         if data.get("ok") is False:
             return FeedbackThreadsResult("failed", [], str(data.get("error") or "feedback server failed"))
-        return FeedbackThreadsResult("ok", parse_feedback_threads(data.get("threads")))
+        return FeedbackThreadsResult("ok", visible_feedback_threads(parse_feedback_threads(data.get("threads"))))
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, ValueError, json.JSONDecodeError) as exc:
         return FeedbackThreadsResult("failed", [], str(exc))
 
@@ -296,6 +319,29 @@ def parse_feedback_threads(value) -> list[FeedbackThread]:
         )
     return threads
 
+def read_hidden_feedback_request_ids() -> set[str]:
+    try:
+        values = json.loads(FEEDBACK_HIDDEN_REQUESTS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(values, list):
+        return set()
+    return {str(value).strip() for value in values if str(value).strip()}
+
+
+def write_hidden_feedback_request_ids(request_ids: set[str]) -> None:
+    FEEDBACK_HIDDEN_REQUESTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FEEDBACK_HIDDEN_REQUESTS_PATH.write_text(
+        json.dumps(sorted(request_ids), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def visible_feedback_threads(threads: list[FeedbackThread]) -> list[FeedbackThread]:
+    hidden_ids = read_hidden_feedback_request_ids()
+    if not hidden_ids:
+        return threads
+    return [thread for thread in threads if thread.request_id not in hidden_ids]
 
 def feedback_reply_ids(threads: list[FeedbackThread]) -> set[str]:
     return {reply.reply_id for thread in threads for reply in thread.replies if reply.reply_id}
@@ -327,12 +373,19 @@ def mark_feedback_replies_seen(threads: list[FeedbackThread]) -> None:
     )
 
 
-def clear_feedback_history() -> None:
-    for path in (FEEDBACK_IDENTITY_PATH, FEEDBACK_SEEN_REPLIES_PATH):
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+def clear_feedback_history(threads: list[FeedbackThread]) -> None:
+    request_ids = {thread.request_id for thread in threads if thread.request_id}
+    reply_ids = feedback_reply_ids(threads)
+    if request_ids:
+        write_hidden_feedback_request_ids(read_hidden_feedback_request_ids() | request_ids)
+    if reply_ids:
+        seen = read_seen_feedback_reply_ids() | reply_ids
+        FEEDBACK_SEEN_REPLIES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FEEDBACK_SEEN_REPLIES_PATH.write_text(
+            json.dumps(sorted(seen), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
 
 def send_discord_webhook(webhook_url: str, report: RevisionRequest, timeout_seconds: int) -> None:
     payload = json.dumps(

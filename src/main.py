@@ -1918,18 +1918,18 @@ def print_startup_cards(app_update_result, db_update_result, deco_update_result,
         print()
 
 
-def prompt_feedback_history_action() -> None:
+def prompt_feedback_history_action(threads=None) -> None:
     choice = input("Enter를 누르면 돌아갑니다 / D 입력: 기록 지우기 > ").strip().casefold()
     if choice != "d":
         return
 
-    confirm = input("이 앱에서 이전 요청/답변 기록을 숨깁니다. 지우려면 DELETE 입력 > ").strip()
+    confirm = input("이전 수정 요청과 답변 기록을 삭제합니다. 지워진 내역은 복구 할 수 없습니다. 지우려면 DELETE 입력 > ").strip()
     if confirm != "DELETE":
         print("기록 지우기를 취소했습니다.")
     else:
         try:
-            clear_feedback_history()
-            print("기록을 지웠습니다. 이후 내 답변은 새 기록으로 시작합니다.")
+            clear_feedback_history(threads or [])
+            print("기록을 삭제했습니다.")
         except OSError as exc:
             print(f"기록 지우기 실패: {exc}")
     input("Enter를 누르면 돌아갑니다 > ")
@@ -1971,7 +1971,7 @@ def show_feedback_replies() -> None:
         print_left_box(lines)
         print()
     mark_feedback_replies_seen(result.threads)
-    prompt_feedback_history_action()
+    prompt_feedback_history_action(result.threads)
 
 def print_results(conn, keyword: str, scope: str, scope_label: str, usage_page: int = 0):
     if scope == "recipe":
