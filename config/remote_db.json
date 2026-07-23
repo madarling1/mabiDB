@@ -7,5 +7,5 @@
     "app_version_url":  "https://raw.githubusercontent.com/madarling1/mabiDB/refs/heads/main/data/app_version.txt",
     "app_download_url":  "https://github.com/madarling1/mabiDB/releases/latest/download/mabiDB.exe",
     "timeout_seconds":  15,
-    "feedback_url":  "https://host-10-0-0-87.tail1ea174.ts.net/api/feedback"
+    "feedback_url":  "https://api.mabidb.org/api/feedback"
 }
