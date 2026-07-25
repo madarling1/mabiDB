@@ -1814,20 +1814,42 @@ def print_deco_results(conn, keyword: str, scope_label: str, usage_page: int = 0
 
 def build_update_result_lines(app_update_result, db_update_result, deco_update_result=None) -> list[str]:
     lines = ["업데이트 결과"]
-    for label, result, fallback in (
-        ("앱", app_update_result, "기존 앱으로 실행합니다."),
-        ("DB", db_update_result, "기존 DB로 실행합니다."),
-        ("데코 이미지", deco_update_result, "기존 텍스트 카드로 실행합니다."),
-    ):
+
+    def append_result(label, result, fallback, *, status_override=None, message_override=None) -> None:
         if result is None:
-            continue
-        if result.status == "updated":
-            lines.extend([f"✔️ {label} 업데이트 완료", f"   기준일자 : {result.message}"])
-        elif result.status == "unchanged":
+            return
+        status = status_override or result.status
+        message = result.message if message_override is None else message_override
+        if status == "updated":
+            lines.extend([f"✔️ {label} 업데이트 완료", f"   기준일자 : {message}"])
+        elif status == "unchanged":
             lines.append(f"✔️ {label} 최신버전입니다.")
-        elif result.status == "failed":
+        elif status == "failed":
             lines.extend([f"! {label} 업데이트 확인 실패", f"   {fallback}"])
         lines.append("")
+
+    append_result("앱", app_update_result, "기존 앱으로 실행합니다.")
+
+    db_status_override = None
+    db_message_override = None
+    if (
+        db_update_result is not None
+        and deco_update_result is not None
+        and db_update_result.status == "unchanged"
+        and deco_update_result.status == "updated"
+    ):
+        db_status_override = "updated"
+        db_message_override = db_update_result.message or deco_update_result.message
+    append_result(
+        "DB",
+        db_update_result,
+        "기존 DB로 실행합니다.",
+        status_override=db_status_override,
+        message_override=db_message_override,
+    )
+
+    if deco_update_result is not None and deco_update_result.status == "failed":
+        append_result("데코 이미지", deco_update_result, "기존 텍스트 카드로 실행합니다.")
 
     while lines and lines[-1] == "":
         lines.pop()
