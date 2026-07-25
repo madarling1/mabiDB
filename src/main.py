@@ -107,6 +107,7 @@ USAGE_COLUMN_COUNT = 2
 USAGE_PAGE_SIZE = USAGE_COLUMN_SIZE * USAGE_COLUMN_COUNT
 GOLDEN_MATERIAL_NAME = "황금 재료"
 GOLDEN_MATERIAL_CARD_SCALE = 1.5
+FISHING_CARD_NAME = "낚시"
 DECO_SIXEL_WIDTH = 64
 DECO_SIXEL_HEIGHT = 64
 DECO_IMAGE_ROW_HEIGHT = 3
@@ -359,6 +360,22 @@ def gathering_card_labels(row) -> tuple[str, str]:
         return "채집 방법", "재료 목록"
     return "채집 장소", "채집 방법"
 
+
+def is_fishing_gathering_card(row, attributes: dict[str, str]) -> bool:
+    return row["name"] == FISHING_CARD_NAME or FISHING_CARD_NAME in attributes.get("태그", "")
+
+
+def fishing_gathering_card_width(row, base_width: int, max_width: int) -> int:
+    bullet = "· "
+    description_width = 0
+    for part in DESCRIPTION_BREAK_PATTERN.split(str(row["description"])):
+        part = part.strip()
+        if part:
+            description_width = max(description_width, display_width(bullet + part))
+    required_width = description_width + 6 if description_width else base_width
+    return min(max_width, max(base_width, required_width))
+
+
 def pad_line(line: str, width: int) -> str:
     return line + (" " * max(0, width - display_width(strip_ansi(line))))
 
@@ -571,7 +588,7 @@ def print_gathering_result_cards(rows, conn) -> None:
     normal_entries = [
         (row, attributes)
         for row, attributes in entries
-        if row["name"] != GOLDEN_MATERIAL_NAME
+        if row["name"] != GOLDEN_MATERIAL_NAME and not is_fishing_gathering_card(row, attributes)
     ]
     section_heights = (
         max_gathering_card_heights(normal_entries, card_width)
@@ -597,6 +614,17 @@ def print_gathering_result_cards(rows, conn) -> None:
             print_group(pending_cards, card_width, two_columns=use_two_columns)
             pending_cards = []
             wide_card_width = min(width, round(card_width * GOLDEN_MATERIAL_CARD_SCALE))
+            print_group(
+                [render_gathering_result_card(row, attributes, wide_card_width)],
+                wide_card_width,
+                two_columns=False,
+            )
+            continue
+
+        if is_fishing_gathering_card(row, attributes):
+            print_group(pending_cards, card_width, two_columns=use_two_columns)
+            pending_cards = []
+            wide_card_width = fishing_gathering_card_width(row, card_width, width)
             print_group(
                 [render_gathering_result_card(row, attributes, wide_card_width)],
                 wide_card_width,
