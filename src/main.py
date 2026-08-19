@@ -277,7 +277,7 @@ def choose_scope(update_result=None, app_update_result=None, deco_update_result=
             startup_cards_pending = False
         elif feedback_result is not None:
             print_startup_cards(None, None, None, feedback_result)
-        print(f"{HIGHLIGHT}시즌2 신규 정보 업데이트 완료!. 오류 제보 환영합니다~ {RESET}")
+        print(f"{HIGHLIGHT}8월 19일 신규 데코 및 제작법 업데이트 완료 !. 오류 제보 환영해요~ {RESET}")
         print()
         print("검색할 그룹을 선택하세요.\n\n초성 검색,영문검색을 지원합니다!\n  ex) ㅇㄷㅎㅂ > 아득한빛\n  ex) dkemr > 아득")
         print()
